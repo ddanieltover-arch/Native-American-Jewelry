@@ -1,8 +1,57 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, AlertTriangle, Search, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const iconBtnClass =
+  'inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+
+export function IconLink({
+  href,
+  title,
+  children,
+  className,
+}: {
+  href: string;
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link href={href} title={title} aria-label={title} className={cn(iconBtnClass, className)}>
+      {children}
+    </Link>
+  );
+}
+
+export function IconButton({
+  title,
+  onClick,
+  children,
+  className,
+  disabled,
+}: {
+  title: string;
+  onClick: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(iconBtnClass, className)}
+    >
+      {children}
+    </button>
+  );
+}
 
 // ─── Badge ────────────────────────────────────────────────
 export function Badge({

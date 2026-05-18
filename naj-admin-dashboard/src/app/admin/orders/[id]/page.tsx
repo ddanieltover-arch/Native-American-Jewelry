@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, XCircle, Package, MapPin, RotateCcw, Truck, Save } from 'lucide-react';
 import { toast } from 'sonner';
@@ -25,8 +25,8 @@ const ORDER_STATUS_OPTIONS = [
   { value: 'refunded',          label: 'Refunded'          },
 ];
 
-export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function OrderDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const { data: order, loading, error, refetch } = useAdminApi<AdminOrder>(`/api/admin/orders/${id}`);
 
   const [notes, setNotes] = useState('');
@@ -89,8 +89,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center gap-4">
-        <Link href="/admin/orders">
-          <Button variant="ghost" size="sm"><ArrowLeft size={14} /> Orders</Button>
+        <Link
+          href="/admin/orders"
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+        >
+          <ArrowLeft size={14} /> Orders
         </Link>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900">{order.order_number}</h1>

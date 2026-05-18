@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
@@ -16,8 +16,8 @@ const STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' },
 ];
 
-export default function ProductEditPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ProductEditPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const { data: product, loading, error } = useAdminApi<AdminProduct>(`/api/admin/products/${id}`);
 
@@ -75,8 +75,11 @@ export default function ProductEditPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-3">
-        <Link href="/admin/products">
-          <Button variant="ghost" size="sm"><ArrowLeft size={14} /> Products</Button>
+        <Link
+          href="/admin/products"
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+        >
+          <ArrowLeft size={14} /> Products
         </Link>
         <Badge className={PRODUCT_STATUS_COLORS[product.status]}>
           {PRODUCT_STATUS_LABELS[product.status]}
@@ -147,8 +150,11 @@ export default function ProductEditPage({ params }: { params: Promise<{ id: stri
             <Button loading={saving} onClick={save}>
               <Save size={14} /> Save changes
             </Button>
-            <Link href="/admin/products">
-              <Button variant="secondary">Cancel</Button>
+            <Link
+              href="/admin/products"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
             </Link>
           </div>
         </div>

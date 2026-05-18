@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag, Download } from 'lucide-react';
+import { ShoppingBag, Download, Eye, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   PageHeader, Card, Badge, Button, SearchInput,
-  Table, Pagination, EmptyState,
+  Table, Pagination, EmptyState, IconLink,
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import {
@@ -37,7 +38,13 @@ const COLUMNS: Column<AdminOrder>[] = [
     key: 'order_number', label: 'Order', sortable: true,
     render: (o) => (
       <div>
-        <p className="text-sm font-semibold text-gray-900">{o.order_number}</p>
+        <Link
+          href={`/admin/orders/${o.id}`}
+          className="text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {o.order_number}
+        </Link>
         <p className="text-xs text-gray-400">{formatDateTime(o.created_at)}</p>
       </div>
     ),
@@ -73,6 +80,19 @@ const COLUMNS: Column<AdminOrder>[] = [
     key: 'items', label: 'Items',
     render: (o) => (
       <span className="text-xs text-gray-500">{o.items?.length ?? 0} item{(o.items?.length ?? 0) !== 1 ? 's' : ''}</span>
+    ),
+  },
+  {
+    key: 'actions', label: 'Actions',
+    render: (o) => (
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <IconLink href={`/admin/orders/${o.id}`} title="View details">
+          <Eye size={14} />
+        </IconLink>
+        <IconLink href={`/admin/orders/${o.id}`} title="Edit order">
+          <Pencil size={14} />
+        </IconLink>
+      </div>
     ),
   },
 ];

@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Package, Eye, Archive, RotateCcw, Pencil } from 'lucide-react';
+import { Package, Eye, RotateCcw, Pencil, Trash2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   PageHeader, Card, Badge, Button, Table,
   Pagination, SearchInput, Tabs, EmptyState,
+  IconLink, IconButton, ConfirmModal,
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import {
@@ -51,6 +52,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<AdminProduct | null>(null);
   const [counts, setCounts] = useState({ all: 0, active: 0, pending: 0, archived: 0 });
 
   const loadCounts = useCallback(async () => {
@@ -108,6 +110,7 @@ export default function ProductsPage() {
     try {
       await adminPost('/api/admin/products/reject', { productId: product.id });
       toast.success(`"${product.name}" archived`);
+      setArchiveTarget(null);
       await loadProducts();
       await loadCounts();
     } catch (e) {
@@ -142,7 +145,13 @@ export default function ProductsPage() {
               : <Package size={14} className="text-gray-300" />}
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate max-w-[260px]">{p.name}</p>
+            <Link
+              href={`/admin/products/${p.id}`}
+              className="text-sm font-medium text-gray-900 truncate max-w-[260px] block hover:text-blue-600 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {p.name}
+            </Link>
             <p className="text-xs text-gray-400">{p.sku ?? 'No SKU'} · {p.category?.name ?? 'Uncategorized'}</p>
           </div>
         </div>
@@ -178,30 +187,49 @@ export default function ProductsPage() {
       render: (p) => <span className="text-xs text-gray-500">{formatDate(p.created_at)}</span>,
     },
     {
-      key: 'actions', label: '',
+      key: 'actions', label: 'Actions',
       render: (p) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <Link href={`/admin/products/${p.id}`}>
-            <Button size="sm" variant="ghost" title="Edit"><Pencil size={13} /></Button>
-          </Link>
+          <IconLink href={`/admin/products/${p.id}`} title="View & edit">
+            <Eye size={14} />
+          </IconLink>
+          <IconLink href={`/admin/products/${p.id}`} title="Edit product">
+            <Pencil size={14} />
+          </IconLink>
           {p.source_url && (
-            <a href={p.source_url} target="_blank" rel="noopener noreferrer">
-              <Button size="sm" variant="ghost"><Eye size={13} /></Button>
-            </a>
+            <IconButton
+              title="View source site"
+              onClick={() => window.open(p.source_url!, '_blank', 'noopener,noreferrer')}
+            >
+              <ExternalLink size={14} />
+            </IconButton>
           )}
           {p.status === 'active' && (
-            <Button size="sm" variant="ghost" loading={loading === p.id} onClick={() => archiveProduct(p)}>
-              <Archive size={13} />
-            </Button>
+            <IconButton
+              title="Archive product"
+              disabled={loading === p.id}
+              className="hover:text-red-600 hover:bg-red-50"
+              onClick={() => setArchiveTarget(p)}
+            >
+              <Trash2 size={14} />
+            </IconButton>
           )}
           {p.status === 'archived' && (
-            <Button size="sm" variant="ghost" loading={loading === p.id} onClick={() => restoreProduct(p)}>
-              <RotateCcw size={13} />
-            </Button>
+            <IconButton
+              title="Restore to active"
+              disabled={loading === p.id}
+              onClick={() => restoreProduct(p)}
+            >
+              <RotateCcw size={14} />
+            </IconButton>
           )}
           {p.status === 'pending' && (
-            <Link href="/admin/products/approval">
-              <Button size="sm">Review</Button>
+            <Link
+              href="/admin/products/approval"
+              className="text-xs font-medium text-blue-600 hover:underline px-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Review
             </Link>
           )}
         </div>
@@ -259,6 +287,20 @@ export default function ProductsPage() {
           </>
         )}
       </Card>
+
+      <ConfirmModal
+        open={!!archiveTarget}
+        title="Archive product?"
+        message={
+          archiveTarget
+            ? `"${archiveTarget.name}" will be hidden from the storefront. You can restore it later.`
+            : ''
+        }
+        confirmLabel="Archive"
+        loading={!!archiveTarget && loading === archiveTarget.id}
+        onConfirm={() => archiveTarget && archiveProduct(archiveTarget)}
+        onCancel={() => setArchiveTarget(null)}
+      />
     </div>
   );
 }
