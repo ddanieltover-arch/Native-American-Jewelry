@@ -39,6 +39,9 @@ const ConfigSchema = z.object({
   // Scheduler
   SCRAPE_CRON: z.string().default('0 3 * * *'),
 
+  // API auth
+  SCRAPER_API_KEY: z.string().min(8).optional(),
+
   // App
   NODE_ENV:  z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
@@ -53,7 +56,15 @@ function loadConfig() {
     });
     process.exit(1);
   }
-  return result.data;
+
+  const data = result.data;
+
+  if (data.NODE_ENV === 'production' && !data.SCRAPER_API_KEY) {
+    console.error('❌ SCRAPER_API_KEY is required when NODE_ENV=production');
+    process.exit(1);
+  }
+
+  return data;
 }
 
 export const config = loadConfig();

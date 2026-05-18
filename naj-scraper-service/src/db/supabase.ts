@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { makeSlug } from '../utils/helpers';
 import type { ScrapeLog, ScrapeError } from '../types';
 
 // ─── Singleton client ─────────────────────────────────────
@@ -70,6 +71,47 @@ export async function completeScrapeLog(
   });
 }
 
+// ─── Resolve or create category by scraped name ─────────────
+export async function resolveCategoryId(
+  categoryName: string | null | undefined
+): Promise<string | null> {
+  if (!categoryName?.trim()) return null;
+
+  const name = categoryName.trim();
+  const slug = makeSlug(name);
+  if (!slug) return null;
+
+  const supabase = getSupabase();
+
+  const { data: existing } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle();
+
+  if (existing?.id) return existing.id;
+
+  const { data: created, error } = await supabase
+    .from('categories')
+    .insert({ name, slug, featured: false, sort_order: 99 })
+    .select('id')
+    .single();
+
+  if (error) {
+    // Race: another worker may have inserted the same slug
+    const { data: retry } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (retry?.id) return retry.id;
+    logger.warn('Failed to resolve category', { name, slug, error });
+    return null;
+  }
+
+  return created?.id ?? null;
+}
+
 // ─── Product save ─────────────────────────────────────────
 export async function saveProduct(product: {
   name:         string;
@@ -82,6 +124,7 @@ export async function saveProduct(product: {
   in_stock:     boolean;
   source_url:   string;
   status:       'pending';
+  category_id?: string | null;
 }): Promise<string | null> {
   const supabase = getSupabase();
 

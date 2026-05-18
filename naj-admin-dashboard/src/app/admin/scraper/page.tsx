@@ -1,54 +1,98 @@
 'use client';
 
-import { useState } from 'react';
-import { RefreshCw, Play, Clock, CheckCircle, XCircle, AlertCircle, Activity } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { RefreshCw, Play, CheckCircle, XCircle, AlertCircle, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, Badge, Button, Table } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
-import { formatDateTime, formatDuration, SCRAPE_STATUS_COLORS, cn } from '@/lib/utils';
-import { MOCK_SCRAPE_LOGS } from '@/lib/mock-data';
-import type { ScrapeLog } from '@/types';
+import { formatDateTime, formatDuration, SCRAPE_STATUS_COLORS } from '@/lib/utils';
+import { adminPost, useAdminApi } from '@/lib/use-admin-api';
+import type { AdminUser, ScrapeLog } from '@/types';
+
+const BULL_BOARD_URL =
+  process.env.NEXT_PUBLIC_BULL_BOARD_URL ?? 'http://localhost:3001';
+
+const POLL_MS = 12_000;
+
+function ErrorDetails({ log }: { log: ScrapeLog }) {
+  const [open, setOpen] = useState(false);
+  if (!log.errors?.length) {
+    return <span className="text-sm text-gray-300">0</span>;
+  }
+  return (
+    <div className="text-sm">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-red-600 font-medium hover:underline"
+      >
+        {log.errors.length}
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {open && (
+        <ul className="mt-2 max-w-md space-y-1 text-xs text-gray-600 bg-red-50 rounded p-2 border border-red-100">
+          {log.errors.slice(0, 10).map((e, i) => (
+            <li key={i}>
+              <span className="font-mono text-red-700">[{e.stage}]</span>{' '}
+              {e.message}
+              <span className="block truncate text-gray-400">{e.url}</span>
+            </li>
+          ))}
+          {log.errors.length > 10 && (
+            <li className="text-gray-400">+{log.errors.length - 10} more</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function ScraperPage() {
-  const [logs, setLogs]       = useState<ScrapeLog[]>(MOCK_SCRAPE_LOGS);
+  const { data: me } = useAdminApi<AdminUser>('/api/admin/me');
+  const { data: logs, loading: logsLoading, error: logsError, refetch: refetchLogs } =
+    useAdminApi<ScrapeLog[]>('/api/admin/scraper/logs');
+
   const [running, setRunning] = useState(false);
-  const [queueStats] = useState({
-    scrape: { waiting: 0, active: 0, failed: 1 },
-    image:  { waiting: 14, active: 3, failed: 0 },
-    email:  { waiting: 0, active: 0 },
-  });
+
+  const canTrigger = me && ['admin', 'super_admin'].includes(me.role);
+  const logList = logs ?? [];
+  const hasRunningLog = logList.some((l) => l.status === 'running');
+
+  useEffect(() => {
+    if (!running && !hasRunningLog) return;
+    const id = setInterval(() => refetchLogs(), POLL_MS);
+    return () => clearInterval(id);
+  }, [running, hasRunningLog, refetchLogs]);
+
+  useEffect(() => {
+    if (running && !hasRunningLog) {
+      setRunning(false);
+      toast.success('Scrape finished — check approval queue for new products');
+    }
+  }, [running, hasRunningLog]);
+
+  useEffect(() => {
+    if (logsError) toast.error(logsError);
+  }, [logsError]);
 
   const triggerScrape = async () => {
+    if (!canTrigger) {
+      toast.error('You do not have permission to trigger scrapes');
+      return;
+    }
     setRunning(true);
-    toast.info('Scrape job dispatched — products will appear in the approval queue when done');
-
-    // Simulate: add a running log entry
-    const fakeLog: ScrapeLog = {
-      id:                `log-live-${Date.now()}`,
-      job_id:            `scrape-${Date.now().toString(36)}`,
-      target_url:        'https://hippiecowgirlcouture.com',
-      status:            'running',
-      products_found:    0,
-      products_filtered: 0,
-      products_imported: 0,
-      errors:            null,
-      duration_ms:       null,
-      started_at:        new Date().toISOString(),
-      completed_at:      null,
-    };
-    setLogs((prev) => [fakeLog, ...prev]);
-
-    // Simulate completion after 8s
-    await new Promise((r) => setTimeout(r, 8000));
-    setLogs((prev) =>
-      prev.map((l) =>
-        l.id === fakeLog.id
-          ? { ...l, status: 'completed' as const, products_found: 43, products_filtered: 11, products_imported: 32, duration_ms: 198400, completed_at: new Date().toISOString() }
-          : l
-      )
-    );
-    toast.success('Scrape complete — 32 products imported to approval queue');
-    setRunning(false);
+    try {
+      const res = await adminPost('/api/admin/scraper/trigger');
+      toast.info(
+        res.jobId
+          ? `Scrape queued (job ${res.jobId})`
+          : 'Scrape job dispatched — products will appear in the approval queue when done'
+      );
+      refetchLogs();
+    } catch (e) {
+      setRunning(false);
+      toast.error(e instanceof Error ? e.message : 'Failed to trigger scrape');
+    }
   };
 
   const columns: Column<ScrapeLog>[] = [
@@ -89,11 +133,7 @@ export default function ScraperPage() {
     },
     {
       key: 'errors', label: 'Errors',
-      render: (l) => (
-        <span className={cn('text-sm', l.errors?.length ? 'text-red-500 font-medium' : 'text-gray-300')}>
-          {l.errors?.length ?? 0}
-        </span>
-      ),
+      render: (l) => <ErrorDetails log={l} />,
     },
     {
       key: 'duration_ms', label: 'Duration',
@@ -109,20 +149,18 @@ export default function ScraperPage() {
     <div className="space-y-5">
       <PageHeader
         title="Scraper Control"
-        subtitle="Manage automated product scraping from the reference site"
+        subtitle="Manage automated product scraping from hippiecowgirlcouture.com"
       />
 
-      {/* Control panel */}
       <div className="grid md:grid-cols-2 gap-5">
-        {/* Manual trigger */}
         <Card title="Manual Scrape">
           <div className="space-y-4">
             <div className="bg-gray-50 rounded-lg p-4 space-y-2">
               {[
                 ['Target URL', 'hippiecowgirlcouture.com'],
-                ['Min Price',  '$150.00 USD'],
-                ['Discount',   '5% applied on import'],
-                ['Schedule',   'Daily at 3:00 AM UTC'],
+                ['Min Price', '$150.00 USD'],
+                ['Discount', '5% applied on import'],
+                ['Schedule', 'Daily at 3:00 AM UTC'],
               ].map(([l, v]) => (
                 <div key={String(l)} className="flex justify-between text-sm">
                   <span className="text-gray-500">{l}</span>
@@ -132,109 +170,79 @@ export default function ScraperPage() {
             </div>
 
             <p className="text-xs text-gray-500 leading-relaxed">
-              Triggering a scrape will crawl the target site, filter products by price, apply the 5% discount,
-              and save new products to the approval queue with <strong>status: pending</strong>. Existing products are skipped.
+              Triggering a scrape crawls the target site, filters products below $150, applies a 5%
+              discount, and saves new products as <strong>pending</strong> for approval. Existing
+              source URLs are skipped.
             </p>
+
+            {!canTrigger && me && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded p-2">
+                Your role ({me.role}) cannot trigger scrapes. Contact an admin.
+              </p>
+            )}
 
             <Button
               className="w-full"
-              loading={running}
+              loading={running || hasRunningLog}
               onClick={triggerScrape}
-              disabled={running}
+              disabled={!canTrigger || running || hasRunningLog}
             >
-              {running ? (
-                <><RefreshCw size={15} className="animate-spin" /> Scraping in progress…</>
+              {running || hasRunningLog ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin" /> Scraping in progress…
+                </>
               ) : (
-                <><Play size={15} /> Trigger Scrape Now</>
+                <>
+                  <Play size={15} /> Trigger Scrape Now
+                </>
               )}
             </Button>
           </div>
         </Card>
 
-        {/* Queue health */}
-        <Card title="Queue Health">
-          <div className="space-y-3">
-            {[
-              { name: 'Scrape Queue',  key: 'scrape', color: 'blue'  },
-              { name: 'Image Queue',   key: 'image',  color: 'teal'  },
-              { name: 'Email Queue',   key: 'email',  color: 'purple'},
-            ].map(({ name, key, color }) => {
-              const stat = queueStats[key as keyof typeof queueStats] as any;
-              return (
-                <div key={key} className="border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">{name}</span>
-                    <Activity size={14} className="text-gray-400" />
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-blue-600">{stat.waiting}</p>
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Waiting</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-green-600">{stat.active}</p>
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide">Active</p>
-                    </div>
-                    {'failed' in stat && (
-                      <div className="text-center">
-                        <p className={cn('text-lg font-bold', stat.failed > 0 ? 'text-red-500' : 'text-gray-400')}>
-                          {stat.failed}
-                        </p>
-                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Failed</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        <Card title="Worker queues">
+          <div className="space-y-3 text-sm text-gray-600">
+            <p>
+              Queue depth is visible in Bull Board when running the scraper stack locally
+              (<code className="text-xs bg-gray-100 px-1 rounded">docker-compose up</code>).
+            </p>
+            <p className="text-xs text-gray-400">
+              Production queue stats are not exposed via the admin API.
+            </p>
+            {BULL_BOARD_URL ? (
+              <a href={BULL_BOARD_URL} target="_blank" rel="noopener noreferrer" className="block">
+                <Button variant="secondary" size="sm" className="w-full">
+                  <Activity size={14} className="mr-1" />
+                  Open Bull Board ↗
+                </Button>
+              </a>
+            ) : (
+              <p className="text-xs text-gray-400">Set NEXT_PUBLIC_BULL_BOARD_URL for dashboard link.</p>
+            )}
           </div>
-
-          <a
-            href="http://localhost:3001"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 block"
-          >
-            <Button variant="secondary" size="sm" className="w-full">
-              Open Bull Board Dashboard ↗
-            </Button>
-          </a>
         </Card>
       </div>
 
-      {/* Active run progress */}
-      {running && (
-        <Card title="Current Scrape — Live">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <RefreshCw size={16} className="animate-spin text-blue-500" />
-              <span className="text-sm font-medium text-gray-800">Crawling hippiecowgirlcouture.com…</span>
-            </div>
-            <div className="space-y-2">
-              {['Discovering catalog pages', 'Collecting product links', 'Scraping product details', 'Processing images'].map((step, i) => (
-                <div key={step} className="flex items-center gap-2 text-sm">
-                  <div className={cn(
-                    'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0',
-                    i === 0 ? 'bg-green-500' : i === 1 ? 'bg-blue-500 animate-pulse' : 'bg-gray-200'
-                  )}>
-                    {i < 1 && <CheckCircle size={10} className="text-white" />}
-                  </div>
-                  <span className={cn(i <= 1 ? 'text-gray-800' : 'text-gray-400')}>{step}</span>
-                </div>
-              ))}
-            </div>
+      {(running || hasRunningLog) && (
+        <Card title="Scrape in progress">
+          <div className="flex items-center gap-3 text-sm text-gray-700">
+            <RefreshCw size={16} className="animate-spin text-blue-500" />
+            Crawling hippiecowgirlcouture.com — logs refresh every {POLL_MS / 1000}s
           </div>
         </Card>
       )}
 
-      {/* Scrape history */}
       <Card title="Scrape History">
-        <Table<ScrapeLog>
-          columns={columns}
-          data={logs}
-          keyField="id"
-          emptyMessage="No scrape history yet"
-        />
+        {logsLoading && logList.length === 0 ? (
+          <p className="text-sm text-gray-500 py-8 text-center">Loading scrape logs…</p>
+        ) : (
+          <Table<ScrapeLog>
+            columns={columns}
+            data={logList}
+            keyField="id"
+            emptyMessage="No scrape history yet — trigger a scrape to begin"
+          />
+        )}
       </Card>
     </div>
   );

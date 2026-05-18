@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Package, Plus, Eye, Archive, RotateCcw } from 'lucide-react';
+import { Package, Eye, Archive, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   PageHeader, Card, Badge, Button, Table,
@@ -10,48 +10,120 @@ import {
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import { formatPrice, formatDate, PRODUCT_STATUS_LABELS, PRODUCT_STATUS_COLORS, cn } from '@/lib/utils';
-import { MOCK_PRODUCTS } from '@/lib/mock-data';
+import { adminPost } from '@/lib/use-admin-api';
 import type { AdminProduct, ProductStatus } from '@/types';
 
+const PER_PAGE = 20;
+
+type ProductListResponse = {
+  products: AdminProduct[];
+  total: number;
+  page: number;
+  perPage: number;
+};
+
+async function fetchProductList(
+  params: Record<string, string>
+): Promise<ProductListResponse> {
+  const qs = new URLSearchParams(params);
+  const match = document.cookie.match(/(?:^|;\s*)admin_token=([^;]+)/);
+  const token = match?.[1];
+  const headers: HeadersInit = token
+    ? { Authorization: `Bearer ${decodeURIComponent(token)}` }
+    : {};
+
+  const res = await fetch(`/api/admin/products?${qs}`, { headers });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? 'Failed to load products');
+  return json;
+}
+
 export default function ProductsPage() {
-  const [products, setProducts] = useState<AdminProduct[]>(MOCK_PRODUCTS);
-  const [tab, setTab]     = useState<ProductStatus | 'all'>('all');
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [total, setTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(true);
+  const [tab, setTab] = useState<ProductStatus | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [page, setPage]   = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState<string | null>(null);
-  const PER_PAGE = 10;
+  const [counts, setCounts] = useState({ all: 0, active: 0, pending: 0, archived: 0 });
 
-  const filtered = useMemo(() => {
-    let list = products;
-    if (tab !== 'all') list = list.filter((p) => p.status === tab);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
+  const loadCounts = useCallback(async () => {
+    try {
+      const [all, active, pending, archived] = await Promise.all([
+        fetchProductList({ per_page: '1', page: '1' }),
+        fetchProductList({ status: 'active', per_page: '1', page: '1' }),
+        fetchProductList({ status: 'pending', per_page: '1', page: '1' }),
+        fetchProductList({ status: 'archived', per_page: '1', page: '1' }),
+      ]);
+      setCounts({
+        all: all.total,
+        active: active.total,
+        pending: pending.total,
+        archived: archived.total,
+      });
+    } catch {
+      /* ignore */
     }
-    return list;
-  }, [products, tab, search]);
+  }, []);
 
-  const counts = {
-    all:      products.length,
-    active:   products.filter((p) => p.status === 'active').length,
-    pending:  products.filter((p) => p.status === 'pending').length,
-    archived: products.filter((p) => p.status === 'archived').length,
-  };
+  const loadProducts = useCallback(async () => {
+    setListLoading(true);
+    try {
+      const params: Record<string, string> = {
+        page: String(page),
+        per_page: String(PER_PAGE),
+      };
+      if (tab !== 'all') params.status = tab;
+      if (search.trim()) params.search = search.trim();
+
+      const result = await fetchProductList(params);
+      setProducts(result.products);
+      setTotal(result.total);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load products');
+      setProducts([]);
+      setTotal(0);
+    } finally {
+      setListLoading(false);
+    }
+  }, [tab, search, page]);
+
+  useEffect(() => {
+    loadCounts();
+  }, [loadCounts]);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadProducts(), search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [loadProducts, search]);
 
   const archiveProduct = async (product: AdminProduct) => {
     setLoading(product.id);
-    await new Promise((r) => setTimeout(r, 400));
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: 'archived' as const } : p));
-    toast.success(`"${product.name}" archived`);
-    setLoading(null);
+    try {
+      await adminPost('/api/admin/products/reject', { productId: product.id });
+      toast.success(`"${product.name}" archived`);
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Archive failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const restoreProduct = async (product: AdminProduct) => {
     setLoading(product.id);
-    await new Promise((r) => setTimeout(r, 400));
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: 'active' as const } : p));
-    toast.success(`"${product.name}" restored`);
-    setLoading(null);
+    try {
+      await adminPost('/api/admin/products/approve', { productId: product.id });
+      toast.success(`"${product.name}" restored to active`);
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Restore failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const columns: Column<AdminProduct>[] = [
@@ -66,7 +138,7 @@ export default function ProductsPage() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate max-w-[260px]">{p.name}</p>
-            <p className="text-xs text-gray-400">{p.sku ?? 'No SKU'} · {p.category?.name}</p>
+            <p className="text-xs text-gray-400">{p.sku ?? 'No SKU'} · {p.category?.name ?? 'Uncategorized'}</p>
           </div>
         </div>
       ),
@@ -129,7 +201,7 @@ export default function ProductsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Products"
-        subtitle={`${products.length} total products in catalog`}
+        subtitle={`${counts.all} total products in catalog`}
         action={
           <div className="flex gap-2">
             <Link href="/admin/products/approval">
@@ -158,13 +230,21 @@ export default function ProductsPage() {
           <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search by name or SKU…" className="w-64" />
         </div>
 
-        <Table<AdminProduct>
-          columns={columns}
-          data={filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)}
-          keyField="id"
-          emptyMessage="No products found"
-        />
-        <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
+        {listLoading ? (
+          <p className="text-sm text-gray-500 py-12 text-center">Loading products…</p>
+        ) : products.length === 0 ? (
+          <EmptyState icon={Package} title="No products found" description="Run a scrape to import products" />
+        ) : (
+          <>
+            <Table<AdminProduct>
+              columns={columns}
+              data={products}
+              keyField="id"
+              emptyMessage="No products found"
+            />
+            <Pagination page={page} total={total} perPage={PER_PAGE} onChange={setPage} />
+          </>
+        )}
       </Card>
     </div>
   );

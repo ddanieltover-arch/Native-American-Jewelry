@@ -5,6 +5,14 @@ import { getNextRunInfo } from './processors/scheduler';
 import { logger } from './utils/logger';
 import { config } from './config';
 
+function verifyApiKey(req: http.IncomingMessage): boolean {
+  const expected = config.SCRAPER_API_KEY;
+  if (!expected) return false;
+  const header = req.headers['x-api-key'];
+  if (!header || Array.isArray(header)) return false;
+  return header === expected;
+}
+
 // ─── Minimal HTTP server for health checks + manual triggers
 const server = http.createServer(async (req, res) => {
   const url    = new URL(req.url ?? '/', `http://localhost`);
@@ -29,9 +37,7 @@ const server = http.createServer(async (req, res) => {
 
   // ── POST /scrape/trigger ───────────────────────────────
   if (method === 'POST' && url.pathname === '/scrape/trigger') {
-    // Simple API-key guard
-    const apiKey = req.headers['x-api-key'];
-    if (apiKey !== process.env.SCRAPER_API_KEY) {
+    if (!verifyApiKey(req)) {
       res.writeHead(401);
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
@@ -59,8 +65,7 @@ const server = http.createServer(async (req, res) => {
 
   // ── POST /queues/drain (admin only) ───────────────────
   if (method === 'POST' && url.pathname === '/queues/drain') {
-    const apiKey = req.headers['x-api-key'];
-    if (apiKey !== process.env.SCRAPER_API_KEY) {
+    if (!verifyApiKey(req)) {
       res.writeHead(401);
       res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;

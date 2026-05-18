@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, XCircle, Eye, ExternalLink, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -11,62 +11,137 @@ import { cn, formatPrice, PRODUCT_STATUS_COLORS, PRODUCT_STATUS_LABELS, timeAgo 
 import { adminPost } from '@/lib/use-admin-api';
 import type { AdminProduct } from '@/types';
 
-export default function ApprovalQueuePage() {
-  const [products, setProducts]       = useState<AdminProduct[]>([]);
+type ProductListResponse = {
+  products: AdminProduct[];
+  total: number;
+};
 
-  useEffect(() => {
-    fetch('/api/admin/products?per_page=100')
-      .then((r) => r.json())
-      .then((d) => setProducts(d.products ?? []))
-      .catch(() => {});
-  }, []);
-  const [tab, setTab]                 = useState<'pending' | 'active' | 'archived'>('pending');
-  const [search, setSearch]           = useState('');
-  const [selected, setSelected]       = useState<AdminProduct | null>(null);
+async function fetchProducts(
+  status: string,
+  search: string
+): Promise<ProductListResponse> {
+  const params = new URLSearchParams({
+    status,
+    per_page: '100',
+  });
+  if (search.trim()) params.set('search', search.trim());
+
+  const match = document.cookie.match(/(?:^|;\s*)admin_token=([^;]+)/);
+  const token = match?.[1];
+  const headers: HeadersInit = token
+    ? { Authorization: `Bearer ${decodeURIComponent(token)}` }
+    : {};
+
+  const res = await fetch(`/api/admin/products?${params}`, { headers });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? 'Failed to load products');
+  return json;
+}
+
+async function fetchStatusTotal(status: string): Promise<number> {
+  const res = await fetchProducts(status, '');
+  return res.total;
+}
+
+export default function ApprovalQueuePage() {
+  const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [tab, setTab] = useState<'pending' | 'active' | 'archived'>('pending');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<AdminProduct | null>(null);
   const [rejectTarget, setRejectTarget] = useState<AdminProduct | null>(null);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [loading, setLoading]         = useState<string | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [counts, setCounts] = useState({ pending: 0, active: 0, archived: 0 });
 
-  const filtered = products.filter((p) =>
-    p.status === tab && p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const loadCounts = useCallback(async () => {
+    try {
+      const [pending, active, archived] = await Promise.all([
+        fetchStatusTotal('pending'),
+        fetchStatusTotal('active'),
+        fetchStatusTotal('archived'),
+      ]);
+      setCounts({ pending, active, archived });
+    } catch {
+      /* ignore count errors */
+    }
+  }, []);
 
-  const counts = {
-    pending:  products.filter((p) => p.status === 'pending').length,
-    active:   products.filter((p) => p.status === 'active').length,
-    archived: products.filter((p) => p.status === 'archived').length,
-  };
+  const loadProducts = useCallback(async () => {
+    setListLoading(true);
+    try {
+      const { products: list } = await fetchProducts(tab, search);
+      setProducts(list);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load products');
+      setProducts([]);
+    } finally {
+      setListLoading(false);
+    }
+  }, [tab, search]);
+
+  useEffect(() => {
+    loadCounts();
+  }, [loadCounts]);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadProducts(), search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [loadProducts, search]);
+
+  const filtered = products;
 
   const approve = async (product: AdminProduct) => {
     setLoading(product.id);
-    await adminPost('/api/admin/products/approve', { productId: product.id });
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: 'active' as const } : p));
-    toast.success(`"${product.name}" approved and published`);
-    setLoading(null);
-    if (selected?.id === product.id) setSelected(null);
+    try {
+      await adminPost('/api/admin/products/approve', { productId: product.id });
+      toast.success(`"${product.name}" approved and published`);
+      setBulkSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
+      if (selected?.id === product.id) setSelected(null);
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Approve failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const reject = async (product: AdminProduct) => {
     setLoading(product.id);
-    await new Promise((r) => setTimeout(r, 600));
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: 'archived' as const } : p));
-    toast.success(`"${product.name}" rejected and archived`);
-    setLoading(null);
-    setRejectTarget(null);
-    if (selected?.id === product.id) setSelected(null);
+    try {
+      await adminPost('/api/admin/products/reject', { productId: product.id });
+      toast.success(`"${product.name}" rejected and archived`);
+      setRejectTarget(null);
+      if (selected?.id === product.id) setSelected(null);
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Reject failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const bulkApprove = async () => {
     setLoading('bulk');
-    await adminPost('/api/admin/products/approve', {
-      productIds: Array.from(bulkSelected),
-    });
-    setProducts((prev) =>
-      prev.map((p) => bulkSelected.has(p.id) ? { ...p, status: 'active' as const } : p)
-    );
-    toast.success(`${bulkSelected.size} products approved`);
-    setBulkSelected(new Set());
-    setLoading(null);
+    try {
+      await adminPost('/api/admin/products/approve', {
+        productIds: Array.from(bulkSelected),
+      });
+      toast.success(`${bulkSelected.size} products approved`);
+      setBulkSelected(new Set());
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Bulk approve failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   return (
@@ -105,7 +180,9 @@ export default function ApprovalQueuePage() {
         </div>
 
         {/* Product list */}
-        {filtered.length === 0 ? (
+        {listLoading ? (
+          <p className="text-sm text-gray-500 py-12 text-center">Loading products…</p>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Package}
             title={tab === 'pending' ? 'No products pending review' : 'No products here'}

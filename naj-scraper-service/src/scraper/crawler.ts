@@ -2,7 +2,7 @@ import pLimit from 'p-limit';
 import { createStealthContext, createPage, safeGoto, scrollToBottom, closeBrowser } from './browser';
 import { extractProductData, extractProductLinks, extractCatalogLinks, extractShopifyVariants } from './extractor';
 import { transformProduct } from './transformer';
-import { saveProduct, saveVariants, createScrapeLog, completeScrapeLog } from '../db/supabase';
+import { saveProduct, saveVariants, createScrapeLog, completeScrapeLog, resolveCategoryId } from '../db/supabase';
 import { imageQueue } from '../queues';
 import { logger, createJobLogger } from '../utils/logger';
 import { throttleDelay, generateJobId } from '../utils/helpers';
@@ -208,6 +208,7 @@ async function scrapeProductPage(
     if (!transformed) return 'filtered';
 
     // Save to Supabase
+    const categoryId = await resolveCategoryId(transformed.category_name);
     const productId = await saveProduct({
       name:         transformed.name,
       slug:         transformed.slug,
@@ -219,6 +220,7 @@ async function scrapeProductPage(
       in_stock:     transformed.in_stock,
       source_url:   transformed.source_url,
       status:       transformed.status,
+      category_id:  categoryId,
     });
 
     // Duplicate (already exists) — skip silently

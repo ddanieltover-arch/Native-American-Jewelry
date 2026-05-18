@@ -6,11 +6,13 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, CreditCard,
   Truck, Tag, Bell, BarChart2, Settings, RefreshCw,
-  ChevronLeft, ChevronRight, Menu, LogOut, Search,
-  AlertCircle, X,
+  ChevronLeft, ChevronRight, LogOut, Search,
+  AlertCircle,
 } from 'lucide-react';
 import { cn, ROLE_LABELS, ROLE_COLORS } from '@/lib/utils';
-import { useAdminStore, MOCK_ADMIN } from '@/lib/store';
+import { useAdminStore } from '@/lib/store';
+import { useAdminApi } from '@/lib/use-admin-api';
+import type { AdminUser } from '@/types';
 
 // ─── Nav config ───────────────────────────────────────────
 const NAV = [
@@ -54,9 +56,16 @@ const NAV = [
 ];
 
 // ─── Sidebar ──────────────────────────────────────────────
-function AdminSidebar({ pendingCount }: { pendingCount: number }) {
+function AdminSidebar({
+  pendingCount,
+  admin,
+}: {
+  pendingCount: number;
+  admin: AdminUser | null;
+}) {
   const pathname   = usePathname();
   const { sidebarCollapsed, collapseSidebar } = useAdminStore();
+  const emailInitial = admin?.email?.[0]?.toUpperCase() ?? 'A';
 
   return (
     <aside
@@ -130,18 +139,20 @@ function AdminSidebar({ pendingCount }: { pendingCount: number }) {
       <div className="border-t border-gray-800 p-3">
         {sidebarCollapsed ? (
           <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white mx-auto">
-            A
+            {emailInitial}
           </div>
         ) : (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
-              {MOCK_ADMIN.email[0].toUpperCase()}
-            </div>
+              {emailInitial}
+            </motion>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-white truncate">{MOCK_ADMIN.email}</p>
-              <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium', ROLE_COLORS[MOCK_ADMIN.role])}>
-                {ROLE_LABELS[MOCK_ADMIN.role]}
-              </span>
+              <p className="text-xs font-medium text-white truncate">{admin?.email ?? 'Admin'}</p>
+              {admin && (
+                <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium', ROLE_COLORS[admin.role])}>
+                  {ROLE_LABELS[admin.role]}
+                </span>
+              )}
             </div>
             <button className="text-gray-500 hover:text-white transition-colors p-1">
               <LogOut size={14} />
@@ -169,21 +180,35 @@ function AdminTopbar({ title }: { title?: string }) {
             className="pl-9 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
           />
         </div>
-        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white cursor-pointer">
-          A
-        </div>
-      </div>
+      </motion>
     </header>
   );
 }
 
+type PendingCountResponse = { total: number };
+
 // ─── Shell layout ─────────────────────────────────────────
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { setAdmin } = useAdminStore();
+  const { setAdmin, admin } = useAdminStore();
+  const { data: me, refetch: refetchMe } = useAdminApi<AdminUser>('/api/admin/me');
+  const { data: pendingData, refetch: refetchPending } = useAdminApi<PendingCountResponse>(
+    pathname === '/admin/login' ? null : '/api/admin/products?status=pending&per_page=1'
+  );
 
-  // Hydrate mock session
-  useEffect(() => { setAdmin(MOCK_ADMIN); }, [setAdmin]);
+  useEffect(() => {
+    if (me) setAdmin(me);
+  }, [me, setAdmin]);
+
+  useEffect(() => {
+    if (pathname !== '/admin/login') {
+      refetchMe();
+      refetchPending();
+    }
+  }, [pathname, refetchMe, refetchPending]);
+
+  const pendingCount = pendingData?.total ?? 0;
+  const sessionAdmin = admin ?? me ?? null;
 
   if (pathname === '/admin/login') {
     return <>{children}</>;
@@ -191,7 +216,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <AdminSidebar pendingCount={3} />
+      <AdminSidebar pendingCount={pendingCount} admin={sessionAdmin} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AdminTopbar />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
