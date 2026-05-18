@@ -1,5 +1,24 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
+
+async function isAdminEmail(email: string): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return false;
+
+  const service = createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data } = await service
+    .from('admin_users')
+    .select('id')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle();
+
+  return !!data;
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -36,7 +55,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (!user?.email || !(await isAdminEmail(user.email))) {
     return NextResponse.redirect(new URL('/admin/login', request.url));
   }
 

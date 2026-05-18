@@ -2,12 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -21,35 +15,40 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError('');
 
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
 
-    if (authErr) {
-      setError(authErr.message);
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof payload.error === 'string'
+            ? payload.error
+            : `Sign-in failed (${res.status}). Check Vercel env vars.`
+        );
+        return;
+      }
+
+      router.push('/admin');
+      router.refresh();
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        setError('Request timed out. Check your connection or Vercel configuration.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Network error. Please try again.');
+      }
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const token = data.session?.access_token;
-    if (token) {
-      document.cookie = `admin_token=${token}; path=/; max-age=86400; SameSite=Lax`;
-    }
-
-    const check = await fetch('/api/admin/me', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-
-    if (!check.ok) {
-      setError('This account is not authorized for admin access.');
-      await supabase.auth.signOut();
-      setLoading(false);
-      return;
-    }
-
-    router.push('/admin');
-    router.refresh();
   };
 
   return (
@@ -63,6 +62,7 @@ export default function AdminLoginPage() {
           className="w-full border border-stone-300 px-3 py-2 mb-3 text-sm"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
         />
         <input
           type="password"
@@ -71,6 +71,7 @@ export default function AdminLoginPage() {
           className="w-full border border-stone-300 px-3 py-2 mb-3 text-sm"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
         />
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
         <button

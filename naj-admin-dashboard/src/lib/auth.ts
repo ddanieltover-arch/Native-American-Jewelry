@@ -29,7 +29,7 @@ export async function verifyAdminToken(req: NextRequest) {
     const { data: adminUser } = await supabase
       .from('admin_users')
       .select('id, email, role, totp_enabled')
-      .eq('email', user.email!)
+      .eq('email', user.email!.trim().toLowerCase())
       .single();
 
     if (!adminUser) return null;
