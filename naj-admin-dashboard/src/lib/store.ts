@@ -24,7 +24,12 @@ export const useAdminStore = create<AdminStore>()(
       setAdmin:        (admin) => set({ admin }),
       toggleSidebar:   ()     => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       collapseSidebar: (v)    => set({ sidebarCollapsed: v }),
-      logout:          ()     => set({ admin: null }),
+      logout:          () => {
+        set({ admin: null });
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('naj-admin');
+        }
+      },
     }),
     { name: 'naj-admin', partialize: (s) => ({ admin: s.admin, sidebarCollapsed: s.sidebarCollapsed }) }
   )

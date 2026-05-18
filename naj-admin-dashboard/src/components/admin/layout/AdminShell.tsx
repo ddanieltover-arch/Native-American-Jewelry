@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Package, ShoppingBag, Users, CreditCard,
   Truck, Tag, Bell, BarChart2, Settings, RefreshCw,
@@ -59,9 +59,13 @@ const NAV = [
 function AdminSidebar({
   pendingCount,
   admin,
+  onLogout,
+  loggingOut,
 }: {
   pendingCount: number;
   admin: AdminUser | null;
+  onLogout: () => void;
+  loggingOut: boolean;
 }) {
   const pathname   = usePathname();
   const { sidebarCollapsed, collapseSidebar } = useAdminStore();
@@ -138,9 +142,16 @@ function AdminSidebar({
       {/* Admin user */}
       <div className="border-t border-gray-800 p-3">
         {sidebarCollapsed ? (
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white mx-auto">
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={loggingOut}
+            title="Log out"
+            aria-label="Log out"
+            className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white mx-auto hover:bg-blue-500 disabled:opacity-50"
+          >
             {emailInitial}
-          </div>
+          </button>
         ) : (
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
@@ -154,7 +165,14 @@ function AdminSidebar({
                 </span>
               )}
             </div>
-            <button className="text-gray-500 hover:text-white transition-colors p-1">
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={loggingOut}
+              title="Log out"
+              aria-label="Log out"
+              className="text-gray-500 hover:text-white transition-colors p-1 disabled:opacity-50"
+            >
               <LogOut size={14} />
             </button>
           </div>
@@ -190,7 +208,9 @@ type PendingCountResponse = { total: number };
 // ─── Shell layout ─────────────────────────────────────────
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { setAdmin, admin } = useAdminStore();
+  const router = useRouter();
+  const { setAdmin, admin, logout: clearAdminStore } = useAdminStore();
+  const [loggingOut, setLoggingOut] = useState(false);
   const { data: me, refetch: refetchMe } = useAdminApi<AdminUser>('/api/admin/me');
   const { data: pendingData, refetch: refetchPending } = useAdminApi<PendingCountResponse>(
     pathname === '/admin/login' ? null : '/api/admin/products?status=pending&per_page=1'
@@ -210,13 +230,32 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const pendingCount = pendingData?.total ?? 0;
   const sessionAdmin = admin ?? me ?? null;
 
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // Still clear client state and redirect
+    }
+    clearAdminStore();
+    setAdmin(null);
+    router.push('/admin/login');
+    router.refresh();
+    setLoggingOut(false);
+  };
+
   if (pathname === '/admin/login') {
     return <>{children}</>;
   }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <AdminSidebar pendingCount={pendingCount} admin={sessionAdmin} />
+      <AdminSidebar
+        pendingCount={pendingCount}
+        admin={sessionAdmin}
+        onLogout={handleLogout}
+        loggingOut={loggingOut}
+      />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AdminTopbar />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
