@@ -65,7 +65,7 @@ function AdminSidebar({
 }) {
   const pathname   = usePathname();
   const { sidebarCollapsed, collapseSidebar } = useAdminStore();
-  const emailInitial = admin?.email?.[0]?.toUpperCase() ?? 'A';
+  const emailInitial = (admin?.email?.charAt(0) ?? 'A').toUpperCase();
 
   return (
     <aside
@@ -145,7 +145,7 @@ function AdminSidebar({
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
               {emailInitial}
-            </motion>
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-white truncate">{admin?.email ?? 'Admin'}</p>
               {admin && (
@@ -180,7 +180,7 @@ function AdminTopbar({ title }: { title?: string }) {
             className="pl-9 pr-4 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
           />
         </div>
-      </motion>
+      </div>
     </header>
   );
 }
