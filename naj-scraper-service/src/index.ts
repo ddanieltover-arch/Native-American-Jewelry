@@ -24,14 +24,18 @@ const server = http.createServer(async (req, res) => {
   // ── GET /health ────────────────────────────────────────
   if (method === 'GET' && url.pathname === '/health') {
     const stats = await getQueueStats().catch(() => null);
+    const inlineMode =
+      process.env.SCRAPE_INLINE === 'true' ||
+      (process.env.NODE_ENV !== 'production' && process.env.SCRAPE_INLINE !== 'false');
     res.writeHead(200);
     res.end(JSON.stringify({
-      status:    'ok',
-      service:   'naj-scraper',
-      uptime:    Math.round(process.uptime()),
-      timestamp: new Date().toISOString(),
-      scheduler: getNextRunInfo(),
-      queues:    stats,
+      status:     'ok',
+      service:    'naj-scraper',
+      scrapeMode: inlineMode ? 'inline' : 'queue',
+      uptime:     Math.round(process.uptime()),
+      timestamp:  new Date().toISOString(),
+      scheduler:  getNextRunInfo(),
+      queues:     stats,
     }, null, 2));
     return;
   }

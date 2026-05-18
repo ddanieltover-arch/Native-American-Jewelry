@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
       signal: AbortSignal.timeout(15_000),
     });
     const health = await res.json().catch(() => null);
-    const redisConfigured = health?.queues != null;
+    const inlineMode = health?.scrapeMode === 'inline';
+    const redisConfigured = inlineMode || health?.queues != null;
     return NextResponse.json({
       data: {
         ok: res.ok,
@@ -49,12 +50,9 @@ export async function GET(req: NextRequest) {
         reachable: res.ok,
         scraperUrl,
         health,
+        inlineMode,
         redisConfigured,
-        error: res.ok
-          ? redisConfigured
-            ? null
-            : 'API is up but Redis/queues are not connected — add REDIS_URL on Render or set SCRAPE_INLINE=true on the API service.'
-          : `Scraper health returned ${res.status}`,
+        error: res.ok ? null : `Scraper health returned ${res.status}`,
       },
     });
   } catch {

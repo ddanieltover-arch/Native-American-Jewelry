@@ -51,6 +51,7 @@ type ScraperStatus = {
   ok: boolean;
   configured: boolean;
   reachable: boolean;
+  inlineMode?: boolean;
   redisConfigured?: boolean;
   scraperUrl?: string;
   error?: string | null;
@@ -216,10 +217,22 @@ export default function ScraperPage() {
       {scraperStatus?.ok && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
           Scraper API connected{scraperStatus.scraperUrl ? ` — ${scraperStatus.scraperUrl}` : ''}
+          {scraperStatus.inlineMode && (
+            <span className="ml-2 text-green-700">· Manual inline mode (Redis not required)</span>
+          )}
         </div>
       )}
 
-      {scraperStatus?.ok && scraperStatus.redisConfigured === false && (
+      {scraperStatus?.ok && scraperStatus.inlineMode && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <p className="font-medium">Inline scrape mode</p>
+          <p className="mt-1 text-blue-800">
+            Manual scrapes run on the API server. Redis and a background worker are not needed.
+          </p>
+        </div>
+      )}
+
+      {scraperStatus?.ok && !scraperStatus.inlineMode && scraperStatus.redisConfigured === false && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-medium">Redis not connected</p>
           <p className="mt-1 text-amber-800">
