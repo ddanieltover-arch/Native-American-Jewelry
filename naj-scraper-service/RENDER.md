@@ -46,6 +46,8 @@ Add the **same** variables to **naj-scraper-api** and **naj-scraper-worker**:
 | `TARGET_URL` | `https://hippiecowgirlcouture.com` |
 | `MIN_PRICE_FILTER` | `150` |
 | `DISCOUNT_RATE` | `0.05` |
+| `SCRAPE_INLINE` | `true` — manual scrapes only (API runs crawl in-process; **no worker/Redis required**) |
+| `MAX_PRODUCTS_PER_RUN` | `100` recommended for batched runs (~1,573 SKUs on [hippiecowgirlcouture.com](https://hippiecowgirlcouture.com)); `0` = unlimited |
 | `SCRAPER_API_KEY` | *(long random string — see below)* |
 | `RESEND_API_KEY` | *(your Resend key)* |
 | `FROM_EMAIL` | `orders@nativeamericanjewelry.com` |
@@ -114,9 +116,28 @@ If Blueprint fails, create two services manually:
 
 ---
 
+## Manual-only mode (no Redis)
+
+Set on **naj-scraper-api** only:
+
+```env
+SCRAPE_INLINE=true
+MAX_PRODUCTS_PER_RUN=100
+```
+
+- Trigger from admin **Scraper** page or `POST /scrape/trigger`.
+- Each run discovers products via `/collections/all` pagination, then scrapes up to `MAX_PRODUCTS_PER_RUN` PDPs.
+- Images upload in-process (no image worker).
+- Repeat triggers until `scrape_logs` show most SKUs imported (many will be filtered below `$150`).
+
+You can skip **naj-scraper-worker** and **REDIS_URL** in this mode.
+
+---
+
 ## Notes
 
 - **Starter plan** ($7/mo per service) avoids cold starts; free web tier sleeps after 15 min idle.
 - Playwright needs Docker — do not use Render “Node” runtime without Docker.
-- Worker must stay running for queue jobs and scheduled scrapes.
+- Worker + `REDIS_URL` required only for queued/scheduled scrapes (`SCRAPE_INLINE` unset or `false`).
+- Full catalog at concurrency 2 can take **several hours**; use batches or add a worker for reliability.
 - Legal: scraping for resale may violate source site terms — review before production use.

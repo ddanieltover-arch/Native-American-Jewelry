@@ -515,7 +515,7 @@ export async function adminDeleteCoupon(couponId: string) {
 export async function adminGetScrapeLogs(limit = 20) {
   const supabase = getAdminClient();
 
-  const staleBefore = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  const staleBefore = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
   await supabase
     .from('scrape_logs')
     .update({

@@ -4,6 +4,7 @@ import { extractProductData, extractProductLinks, extractCatalogLinks, extractSh
 import { transformProduct } from './transformer';
 import { saveProduct, saveVariants, createScrapeLog, completeScrapeLog, resolveCategoryId } from '../db/supabase';
 import { imageQueue } from '../queues';
+import { processImage } from '../image/processor';
 import { logger, createJobLogger } from '../utils/logger';
 import { throttleDelay, generateJobId } from '../utils/helpers';
 import { config } from '../config';
@@ -33,13 +34,12 @@ export async function crawlSite(
     const catalogUrls = await discoverCatalogUrls(context, targetUrl, jobId);
     jLog.info(`Found ${catalogUrls.length} catalog pages`);
 
-    // Add the root shop/collections all page
+    // hippiecowgirlcouture.com lists ~1573 SKUs under /collections/all (Shopify paginated)
     const allUrls = [
       ...new Set([
         `${targetUrl}/collections/all`,
-        `${targetUrl}/collections/jewelry`,
         `${targetUrl}/shop`,
-        ...catalogUrls,
+        ...catalogUrls.filter((u) => !u.endsWith('/collections/all')),
       ]),
     ];
 
@@ -50,7 +50,7 @@ export async function crawlSite(
     await Promise.all(
       allUrls.map((catUrl) =>
         pageLimiter(async () => {
-          const links = await collectProductUrlsFromPage(context, catUrl, jobId);
+          const links = await collectProductUrlsFromCatalog(context, catUrl, jobId);
           links.forEach((l) => allProductUrls.add(l));
           await throttleDelay();
         })
@@ -59,11 +59,17 @@ export async function crawlSite(
 
     jLog.info(`Discovered ${allProductUrls.size} unique product URLs`);
 
+    let productUrls = Array.from(allProductUrls);
+    if (config.MAX_PRODUCTS_PER_RUN > 0 && productUrls.length > config.MAX_PRODUCTS_PER_RUN) {
+      productUrls = productUrls.slice(0, config.MAX_PRODUCTS_PER_RUN);
+      jLog.info(`Capped to MAX_PRODUCTS_PER_RUN=${config.MAX_PRODUCTS_PER_RUN}`);
+    }
+
     // ── Step 3: Scrape each product page ────────────────────
     const productLimiter = pLimit(config.SCRAPE_CONCURRENCY);
 
     await Promise.all(
-      Array.from(allProductUrls).map((productUrl) =>
+      productUrls.map((productUrl) =>
         productLimiter(async () => {
           try {
             const result = await scrapeProductPage(context, productUrl, jobId);
@@ -151,6 +157,50 @@ async function discoverCatalogUrls(
   }
 }
 
+// ─── Collect product URLs (Shopify collections use ?page= pagination) ──
+async function collectProductUrlsFromCatalog(
+  context: any,
+  url:     string,
+  jobId:   string
+): Promise<string[]> {
+  const normalized = url.split('?')[0].replace(/\/$/, '');
+  if (normalized.includes('/collections/')) {
+    return collectShopifyCollectionProducts(context, normalized, jobId);
+  }
+  return collectProductUrlsFromPage(context, url, jobId);
+}
+
+/** Walk Shopify collection pages until no new /products/ links appear */
+async function collectShopifyCollectionProducts(
+  context: any,
+  collectionUrl: string,
+  jobId: string
+): Promise<string[]> {
+  const jLog = createJobLogger(jobId);
+  const allLinks = new Set<string>();
+  let pageNum = 1;
+  let unchangedPages = 0;
+  const maxPages = 250;
+
+  while (pageNum <= maxPages && unchangedPages < 2) {
+    const pageUrl = pageNum === 1 ? collectionUrl : `${collectionUrl}?page=${pageNum}`;
+    const before = allLinks.size;
+    const links = await collectProductUrlsFromPage(context, pageUrl, jobId);
+    links.forEach((l) => allLinks.add(l));
+    jLog.info(`Collection page ${pageNum}: +${links.length} links (${allLinks.size} total)`, {
+      url: pageUrl,
+    });
+
+    if (allLinks.size === before) unchangedPages++;
+    else unchangedPages = 0;
+
+    pageNum++;
+    await throttleDelay();
+  }
+
+  return [...allLinks];
+}
+
 // ─── Collect product URLs from a single catalog page ─────
 async function collectProductUrlsFromPage(
   context: any,
@@ -164,7 +214,7 @@ async function collectProductUrlsFromPage(
     const ok = await safeGoto(page, url);
     if (!ok) return [];
 
-    await scrollToBottom(page, 15);
+    await scrollToBottom(page, 20);
 
     const links = await extractProductLinks(page, url);
     jLog.debug(`${links.length} product links on ${url}`);
@@ -231,19 +281,25 @@ async function scrapeProductPage(
       await saveVariants(productId, transformed.variants);
     }
 
-    // Queue image processing jobs
+    const inlineImages = process.env.SCRAPE_INLINE === 'true';
     let imageJobsQueued = 0;
     for (let i = 0; i < transformed.image_urls.length; i++) {
-      await imageQueue.add('process-image', {
+      const imageJob = {
         productId,
         sourceUrl:   transformed.image_urls[i],
         position:    i,
         isPrimary:   i === 0,
         productName: transformed.name,
-      }, {
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 3000 },
-      });
+      };
+
+      if (inlineImages) {
+        await processImage(imageJob);
+      } else {
+        await imageQueue.add('process-image', imageJob, {
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 3000 },
+        });
+      }
       imageJobsQueued++;
     }
 

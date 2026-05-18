@@ -163,18 +163,31 @@ SCRAPER_SERVICE_URL=https://naj-scraper-api.onrender.com
 
 ---
 
-## Scale: 100,000+ products
+## Scale: hippiecowgirl (~1,573 SKUs) and beyond
 
-At target scale, enforce:
+**Reference catalog:** [hippiecowgirlcouture.com](https://hippiecowgirlcouture.com) lists **~1,573 products** under `/collections/all` (Shopify, paginated `?page=2`, `?page=3`, …). The crawler walks those pages until no new `/products/` links appear.
 
 | Concern | Approach |
 |---------|----------|
-| **Throughput** | BullMQ worker + `SCRAPE_CONCURRENCY` / delays in config; avoid one giant synchronous run |
-| **Pagination** | Crawler infinite-scroll + collection URLs (`/collections/all` and linked collections) |
+| **Full catalog discovery** | Primary seed: `TARGET_URL/collections/all` + Shopify `?page=N` pagination (not scroll-only) |
+| **Manual runs on Render** | `SCRAPE_INLINE=true` (no Redis). Set `MAX_PRODUCTS_PER_RUN=100` for ~30–60 min batches; repeat until catalog is covered |
+| **Long runs in admin** | Scrape logs stay `running` up to **12 hours** before marked stale |
+| **Throughput** | `SCRAPE_CONCURRENCY=2`, delays 1.5–4s → full catalog **~2.5–5+ hours** if `MAX_PRODUCTS_PER_RUN=0` |
+| **Images (inline)** | With `SCRAPE_INLINE=true`, images process in-process (`processImage`); no worker required |
+| **Images (queued)** | Redis + worker: `image` queue → WebP → `product-images` bucket |
 | **DB** | Indexes in `001_schema.sql`; approve in batches via admin |
-| **Images** | `image` queue → WebP → `product-images` bucket; do not hotlink source CDN long-term |
-| **Rate limits** | `REQUEST_DELAY_MIN_MS` / `REQUEST_DELAY_MAX_MS`; use `PROXY_*` in production |
-| **Idempotency** | Upsert by `slug`; re-scrape updates pending rows, not duplicate slugs |
+| **Rate limits** | `REQUEST_DELAY_MIN_MS` / `REQUEST_DELAY_MAX_MS`; use `PROXY_*` if blocked |
+| **Idempotency** | Upsert by `slug`; re-scrape skips duplicates |
+
+Example Render env for batched manual ingestion:
+
+```env
+TARGET_URL=https://hippiecowgirlcouture.com
+SCRAPE_INLINE=true
+MAX_PRODUCTS_PER_RUN=100
+MIN_PRICE_FILTER=150
+DISCOUNT_RATE=0.05
+```
 
 Monitor `scrape_logs` for `partial` / `failed` and IP blocks.
 
