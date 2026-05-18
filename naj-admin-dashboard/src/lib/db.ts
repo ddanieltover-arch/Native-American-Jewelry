@@ -12,14 +12,54 @@ function getAdminClient(): SupabaseClient {
   );
 }
 
-function normalizeOrder<T extends { payment?: unknown; items?: unknown }>(order: T): T {
-  const normalized = { ...order } as T & { payment?: unknown; items?: unknown };
+function normalizeShippingAddress(addr: unknown) {
+  if (!addr || typeof addr !== 'object') {
+    return {
+      line1: '',
+      city: '',
+      country: '',
+    };
+  }
+  const a = addr as Record<string, unknown>;
+  return {
+    email: typeof a.email === 'string' ? a.email : undefined,
+    first_name:
+      typeof a.first_name === 'string'
+        ? a.first_name
+        : typeof a.firstName === 'string'
+          ? a.firstName
+          : undefined,
+    last_name:
+      typeof a.last_name === 'string'
+        ? a.last_name
+        : typeof a.lastName === 'string'
+          ? a.lastName
+          : undefined,
+    phone: typeof a.phone === 'string' ? a.phone : a.phone === null ? null : undefined,
+    line1: String(a.line1 ?? ''),
+    line2: a.line2 ? String(a.line2) : null,
+    city: String(a.city ?? ''),
+    state: a.state ? String(a.state) : null,
+    country: String(a.country ?? ''),
+    zip: a.zip ? String(a.zip) : null,
+  };
+}
+
+function normalizeOrder<T extends { payment?: unknown; items?: unknown; shipping_address?: unknown }>(
+  order: T
+): T {
+  const normalized = { ...order } as T & {
+    payment?: unknown;
+    items?: unknown;
+    shipping_address?: unknown;
+  };
   if (Array.isArray(normalized.payment)) {
     normalized.payment = normalized.payment[0] ?? null;
   }
   if (!Array.isArray(normalized.items)) {
     normalized.items = [];
   }
+  normalized.shipping_address = normalizeShippingAddress(normalized.shipping_address);
   return normalized as T;
 }
 

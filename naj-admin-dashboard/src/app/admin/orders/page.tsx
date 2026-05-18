@@ -13,6 +13,7 @@ import type { Column } from '@/components/admin/ui';
 import {
   formatPrice, formatDateTime, ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS, PAYMENT_METHOD_LABELS, lookupLabel, lookupColor, cn,
+  getOrderContact,
 } from '@/lib/utils';
 import type { AdminOrder } from '@/types';
 
@@ -51,12 +52,20 @@ const COLUMNS: Column<AdminOrder>[] = [
   },
   {
     key: 'customer', label: 'Customer',
-    render: (o) => o.customer ? (
-      <div>
-        <p className="text-sm text-gray-800">{o.customer.first_name} {o.customer.last_name}</p>
-        <p className="text-xs text-gray-400">{o.customer.email}</p>
-      </div>
-    ) : <span className="text-gray-400 text-xs">Guest</span>,
+    render: (o) => {
+      const contact = getOrderContact(o);
+      if (!contact.fullName && !contact.email) {
+        return <span className="text-gray-400 text-xs">Guest</span>;
+      }
+      return (
+        <div>
+          <p className="text-sm text-gray-800">{contact.fullName || '—'}</p>
+          <p className="text-xs text-gray-400 truncate max-w-[200px]">
+            {contact.email || contact.phone || '—'}
+          </p>
+        </div>
+      );
+    },
   },
   {
     key: 'status', label: 'Status', sortable: true,

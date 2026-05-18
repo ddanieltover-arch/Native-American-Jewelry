@@ -1,6 +1,13 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { OrderStatus, PaymentStatus, PaymentMethod, ProductStatus, AdminRole } from '@/types';
+import type {
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  ProductStatus,
+  AdminRole,
+  AdminOrder,
+} from '@/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -164,6 +171,50 @@ export function formatDuration(ms: number): string {
 export function truncate(str: string, len: number): string {
   if (str.length <= len) return str;
   return str.slice(0, len) + '…';
+}
+
+// ─── Order contact (checkout form + customer record) ────────
+export function getOrderContact(order: AdminOrder) {
+  const addr = order.shipping_address;
+  const fromCustomer = order.customer;
+
+  const email =
+    fromCustomer?.email?.trim() ||
+    addr.email?.trim() ||
+    '';
+  const firstName =
+    fromCustomer?.first_name?.trim() ||
+    addr.first_name?.trim() ||
+    '';
+  const lastName =
+    fromCustomer?.last_name?.trim() ||
+    addr.last_name?.trim() ||
+    '';
+  const phone =
+    fromCustomer?.phone?.trim() ||
+    (addr.phone && String(addr.phone).trim()) ||
+    '';
+
+  const fullName = [firstName, lastName].filter(Boolean).join(' ');
+
+  return {
+    email,
+    firstName,
+    lastName,
+    fullName,
+    phone,
+    isGuest: !order.customer_id,
+  };
+}
+
+export function formatShippingAddress(addr: AdminOrder['shipping_address']): string[] {
+  const lines: string[] = [];
+  if (addr.line1) lines.push(addr.line1);
+  if (addr.line2) lines.push(addr.line2);
+  const cityLine = [addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
+  if (cityLine) lines.push(cityLine);
+  if (addr.country) lines.push(addr.country);
+  return lines;
 }
 
 // ─── Debounce ─────────────────────────────────────────────

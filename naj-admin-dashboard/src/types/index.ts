@@ -86,12 +86,16 @@ export interface AdminOrder {
 }
 
 export interface ShippingAddress {
-  line1:   string;
-  line2?:  string;
-  city:    string;
-  state?:  string;
-  country: string;
-  zip?:    string;
+  email?:      string;
+  first_name?: string;
+  last_name?:  string;
+  phone?:      string | null;
+  line1:       string;
+  line2?:      string | null;
+  city:        string;
+  state?:      string | null;
+  country:     string;
+  zip?:        string | null;
 }
 
 export interface OrderItem {
