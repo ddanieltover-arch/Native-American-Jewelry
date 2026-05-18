@@ -1,0 +1,40 @@
+{
+  "name": "naj-scraper-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native American Jewelry — Playwright scraper + BullMQ worker service",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev":        "tsx watch src/index.ts",
+    "build":      "tsc",
+    "start":      "node dist/index.js",
+    "worker":     "tsx src/worker.ts",
+    "scrape:now": "tsx src/scraper/run-now.ts",
+    "lint":       "eslint src --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright":          "^1.45.0",
+    "bullmq":              "^5.8.3",
+    "ioredis":             "^5.4.1",
+    "sharp":               "^0.33.4",
+    "@supabase/supabase-js":"^2.44.4",
+    "resend":              "^3.4.0",
+    "axios":               "^1.7.2",
+    "zod":                 "^3.23.8",
+    "winston":             "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "slugify":             "^1.6.6",
+    "node-cron":           "^3.0.3",
+    "p-limit":             "^4.0.0",
+    "p-retry":             "^6.2.0",
+    "dotenv":              "^16.4.5",
+    "date-fns":            "^3.6.0"
+  },
+  "devDependencies": {
+    "typescript":    "^5.5.3",
+    "tsx":           "^4.16.2",
+    "@types/node":   "^20.14.10",
+    "@types/node-cron": "^3.0.11"
+  }
+}

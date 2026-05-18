@@ -1,0 +1,225 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=Jost:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body:    'Jost', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* Brand tokens */
+  --obsidian:   #0e0c0a;
+  --charcoal:   #1c1916;
+  --umber:      #3d2c1e;
+  --sienna:     #8b5e3c;
+  --sand:       #c9a97a;
+  --bone:       #f0e8d8;
+  --parchment:  #faf6ef;
+  --turquoise:  #3da8a0;
+  --teal:       #2a7f78;
+  --gold:       #c8973a;
+  --gold2:      #e4b55a;
+
+  /* Semantic */
+  --bg-primary:   var(--parchment);
+  --bg-secondary: var(--bone);
+  --text-primary: var(--obsidian);
+  --text-muted:   var(--sienna);
+  --border:       rgba(61, 44, 30, 0.12);
+  --border-heavy: rgba(61, 44, 30, 0.25);
+
+  --header-height: 72px;
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--parchment);
+    color: var(--obsidian);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.65;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: var(--turquoise);
+    color: white;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bone); }
+  ::-webkit-scrollbar-thumb { background: var(--sand); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--sienna); }
+}
+
+@layer components {
+  /* Typography scale */
+  .text-display {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 7vw, 7rem);
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .text-heading-xl {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 4vw, 3.5rem);
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  .text-heading-lg {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3vw, 2.5rem);
+    font-weight: 400;
+  }
+
+  .text-heading-md {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 400;
+  }
+
+  .text-label {
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply bg-brand-obsidian text-brand-bone;
+    @apply px-8 py-3.5 text-sm font-medium tracking-widest uppercase;
+    @apply transition-all duration-300;
+    @apply hover:bg-brand-umber hover:shadow-glow-gold;
+    @apply active:scale-[0.98];
+    @apply disabled:opacity-40 disabled:cursor-not-allowed;
+    letter-spacing: 0.12em;
+    font-family: var(--font-body);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply border border-brand-obsidian text-brand-obsidian;
+    @apply px-8 py-3.5 text-sm font-medium tracking-widest uppercase;
+    @apply transition-all duration-300;
+    @apply hover:bg-brand-obsidian hover:text-brand-bone;
+    @apply active:scale-[0.98];
+    letter-spacing: 0.12em;
+    font-family: var(--font-body);
+  }
+
+  .btn-turquoise {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply bg-brand-turquoise text-white;
+    @apply px-8 py-3.5 text-sm font-medium;
+    @apply transition-all duration-300;
+    @apply hover:bg-brand-teal hover:shadow-glow-teal;
+    @apply active:scale-[0.98];
+    font-family: var(--font-body);
+    letter-spacing: 0.06em;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white rounded-none shadow-card;
+    @apply transition-shadow duration-300;
+    @apply hover:shadow-card-hover;
+  }
+
+  /* Input base */
+  .input-base {
+    @apply w-full bg-white border border-brand-bone;
+    @apply px-4 py-3 text-sm text-brand-obsidian;
+    @apply placeholder:text-brand-sienna/50;
+    @apply focus:outline-none focus:border-brand-turquoise;
+    @apply transition-colors duration-200;
+    font-family: var(--font-body);
+  }
+
+  /* Gold divider line */
+  .divider-gold {
+    @apply block w-12 h-px bg-brand-gold mx-auto my-4;
+  }
+
+  /* Grain overlay utility */
+  .grain-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bone) 25%,
+      var(--parchment) 50%,
+      var(--bone) 75%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 1.8s infinite;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-block px-2 py-0.5 text-[10px] font-medium tracking-widest uppercase;
+    font-family: var(--font-body);
+  }
+
+  .badge-gold {
+    @apply badge bg-brand-gold text-white;
+  }
+
+  .badge-teal {
+    @apply badge bg-brand-turquoise text-white;
+  }
+
+  .badge-obsidian {
+    @apply badge bg-brand-obsidian text-brand-bone;
+  }
+
+  /* Star rating */
+  .star-filled  { color: var(--gold); }
+  .star-empty   { color: var(--bone); }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .text-balance { text-wrap: balance; }
+
+  /* Staggered animation delays */
+  .delay-75  { animation-delay: 75ms; }
+  .delay-150 { animation-delay: 150ms; }
+  .delay-225 { animation-delay: 225ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-375 { animation-delay: 375ms; }
+  .delay-450 { animation-delay: 450ms; }
+}
