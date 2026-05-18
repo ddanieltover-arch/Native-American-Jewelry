@@ -1,27 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminGetCustomers, adminUpdateCustomer } from '@/lib/db';
+import { adminGetNotificationConfig, adminUpdateNotificationConfig } from '@/lib/db';
 import { verifyAdminToken } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const admin = await verifyAdminToken(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const result = await adminGetCustomers({
-    search: searchParams.get('search') ?? undefined,
-    page: parseInt(searchParams.get('page') ?? '1'),
-    perPage: parseInt(searchParams.get('per_page') ?? '20'),
-  });
-  return NextResponse.json(result);
+  const config = await adminGetNotificationConfig();
+  return NextResponse.json({ data: config });
 }
 
 export async function PATCH(req: NextRequest) {
   const admin = await verifyAdminToken(req);
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!['admin', 'super_admin'].includes(admin.role)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
-  const { id, notes, blacklisted } = await req.json();
+  const { id, ...updates } = await req.json();
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-  await adminUpdateCustomer(id, { notes, blacklisted });
-  return NextResponse.json({ data: { updated: true } });
+  await adminUpdateNotificationConfig(id, updates);
+  const config = await adminGetNotificationConfig();
+  return NextResponse.json({ data: config });
 }

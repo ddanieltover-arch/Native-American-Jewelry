@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Package, Eye, Archive, RotateCcw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Package, Eye, Archive, RotateCcw, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   PageHeader, Card, Badge, Button, Table,
@@ -32,13 +33,14 @@ async function fetchProductList(
     ? { Authorization: `Bearer ${decodeURIComponent(token)}` }
     : {};
 
-  const res = await fetch(`/api/admin/products?${qs}`, { headers });
+  const res = await fetch(`/api/admin/products?${qs}`, { headers, credentials: 'include' });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? 'Failed to load products');
   return json;
 }
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [total, setTotal] = useState(0);
   const [listLoading, setListLoading] = useState(true);
@@ -172,6 +174,9 @@ export default function ProductsPage() {
       key: 'actions', label: '',
       render: (p) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/admin/products/${p.id}`}>
+            <Button size="sm" variant="ghost" title="Edit"><Pencil size={13} /></Button>
+          </Link>
           {p.source_url && (
             <a href={p.source_url} target="_blank" rel="noopener noreferrer">
               <Button size="sm" variant="ghost"><Eye size={13} /></Button>
@@ -241,6 +246,7 @@ export default function ProductsPage() {
               data={products}
               keyField="id"
               emptyMessage="No products found"
+              onRowClick={(p) => router.push(`/admin/products/${p.id}`)}
             />
             <Pagination page={page} total={total} perPage={PER_PAGE} onChange={setPage} />
           </>

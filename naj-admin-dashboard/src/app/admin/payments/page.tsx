@@ -15,11 +15,14 @@ import {
   PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS,
   ORDER_STATUS_LABELS, ORDER_STATUS_COLORS,
 } from '@/lib/utils';
-import { MOCK_ORDERS } from '@/lib/mock-data';
+import { adminPost, useAdminApi } from '@/lib/use-admin-api';
 import type { AdminOrder, PaymentStatus } from '@/types';
 
+type OrdersResponse = { orders: AdminOrder[]; total: number };
+
 export default function PaymentsPage() {
-  const [orders, setOrders]       = useState<AdminOrder[]>(MOCK_ORDERS);
+  const { data, refetch } = useAdminApi<OrdersResponse>('/api/admin/orders?per_page=100');
+  const orders = (data?.orders ?? []).filter((o) => o.payment);
   const [tab, setTab]             = useState<'all' | 'uploaded' | 'confirmed' | 'pending' | 'failed'>('uploaded');
   const [search, setSearch]       = useState('');
   const [preview, setPreview]     = useState<AdminOrder | null>(null);
@@ -49,26 +52,28 @@ export default function PaymentsPage() {
     failed:    orders.filter((o) => o.payment?.status === 'failed').length,
   }), [orders]);
 
-  const updatePaymentStatus = async (orderId: string, newStatus: PaymentStatus) => {
-    setLoading(`${orderId}-${newStatus}`);
-    await new Promise((r) => setTimeout(r, 600));
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              status: newStatus === 'confirmed' ? 'processing' : newStatus === 'failed' ? 'cancelled' : o.status,
-              payment: o.payment ? { ...o.payment, status: newStatus, verified_at: new Date().toISOString() } : o.payment,
-            }
-          : o
-      )
-    );
-    toast.success(`Payment ${PAYMENT_STATUS_LABELS[newStatus].toLowerCase()}`);
-    setLoading(null);
-    if (preview?.id === orderId) {
-      setPreview((p) =>
-        p ? { ...p, payment: p.payment ? { ...p.payment, status: newStatus } : p.payment } : p
-      );
+  const updatePaymentStatus = async (order: AdminOrder, newStatus: PaymentStatus) => {
+    if (!order.payment) return;
+    setLoading(`${order.id}-${newStatus}`);
+    try {
+      await adminPost(`/api/admin/payments/${order.payment.id}/verify`, {
+        status: newStatus,
+        notes: {
+          customerEmail: order.customer?.email,
+          orderNumber: order.order_number,
+        },
+      });
+      toast.success(`Payment ${PAYMENT_STATUS_LABELS[newStatus].toLowerCase()}`);
+      refetch();
+      if (preview?.id === order.id) {
+        setPreview((p) =>
+          p?.payment ? { ...p, payment: { ...p.payment, status: newStatus } } : p
+        );
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setLoading(null);
     }
   };
 
@@ -136,7 +141,7 @@ export default function PaymentsPage() {
               <Button
                 size="sm"
                 loading={loading === `${o.id}-confirmed`}
-                onClick={() => updatePaymentStatus(o.id, 'confirmed')}
+                onClick={() => updatePaymentStatus(o, 'confirmed')}
               >
                 <CheckCircle size={13} /> Confirm
               </Button>
@@ -144,7 +149,7 @@ export default function PaymentsPage() {
                 size="sm"
                 variant="danger"
                 loading={loading === `${o.id}-failed`}
-                onClick={() => updatePaymentStatus(o.id, 'failed')}
+                onClick={() => updatePaymentStatus(o, 'failed')}
               >
                 <XCircle size={13} />
               </Button>
@@ -285,14 +290,14 @@ export default function PaymentsPage() {
                 <Button
                   className="flex-1"
                   loading={loading === `${preview.id}-confirmed`}
-                  onClick={() => updatePaymentStatus(preview.id, 'confirmed')}
+                  onClick={() => updatePaymentStatus(preview, 'confirmed')}
                 >
                   <CheckCircle size={14} /> Confirm Payment
                 </Button>
                 <Button
                   variant="danger"
                   loading={loading === `${preview.id}-failed`}
-                  onClick={() => updatePaymentStatus(preview.id, 'failed')}
+                  onClick={() => updatePaymentStatus(preview, 'failed')}
                 >
                   <XCircle size={14} /> Failed
                 </Button>

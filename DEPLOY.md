@@ -74,8 +74,38 @@ docker-compose up -d
 
 ## 6. Smoke test
 
+### Storefront & orders
+
 - [ ] `/shop` shows products from Supabase
 - [ ] Checkout creates order + Resend email
 - [ ] `/contact` sends email
-- [ ] Admin login → approve pending product → visible on shop
-- [ ] `POST /scrape/trigger` on scraper service
+
+### Scraper skill (scrape → approve → storefront)
+
+Prerequisites: migrations `001`–`003` applied; `naj-scraper-service/.env` and admin `.env.local` share the same `SCRAPER_API_KEY`.
+
+1. Start scraper stack:
+   ```bash
+   cd naj-scraper-service
+   docker-compose up -d
+   curl http://localhost:4000/health
+   ```
+   Or locally: `npm run dev` + `npm run dev:worker` in separate terminals.
+
+2. Trigger a scrape (pick one):
+   - Admin → **Scraper** → **Trigger Scrape Now**
+   - Or: `curl -X POST http://localhost:4000/scrape/trigger -H "x-api-key: YOUR_SCRAPER_API_KEY"`
+
+3. Verify in Supabase (or admin **Scrape History**):
+   - `scrape_logs` row with `status` completed/partial
+   - `products` rows with `status = pending`, `source_price >= 150`, `price ≈ source_price × 0.95`
+
+4. Admin → **Approval Queue** → approve one product.
+
+5. Storefront `/shop` shows only **active** products (approved SKU visible; pending hidden).
+
+Optional one-shot test (requires image worker running for photos):
+```bash
+cd naj-scraper-service
+npm run scrape:now -- https://hippiecowgirlcouture.com/collections/necklaces
+```

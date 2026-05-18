@@ -12,6 +12,13 @@ function getAdminClient(): SupabaseClient {
   );
 }
 
+function normalizeOrder<T extends { payment?: unknown }>(order: T): T {
+  if (Array.isArray(order.payment)) {
+    return { ...order, payment: order.payment[0] ?? null };
+  }
+  return order;
+}
+
 // ══════════════════════════════════════════════════════════
 // PRODUCTS — APPROVAL QUEUE
 // ══════════════════════════════════════════════════════════
@@ -89,6 +96,21 @@ export async function adminBulkApproveProducts(productIds: string[], adminId: st
   if (error) throw error;
 }
 
+export async function adminGetProduct(productId: string) {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      category:categories(id, name, slug),
+      images:product_images(id, url, alt, is_primary, position)
+    `)
+    .eq('id', productId)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function adminUpdateProduct(
   productId: string,
   updates: Partial<{
@@ -151,7 +173,12 @@ export async function adminGetOrders(filters: OrderListFilters = {}) {
   const { data, error, count } = await query;
   if (error) throw error;
 
-  return { orders: data ?? [], total: count ?? 0, page, perPage };
+  return {
+    orders: (data ?? []).map((o) => normalizeOrder(o)),
+    total: count ?? 0,
+    page,
+    perPage,
+  };
 }
 
 export async function adminGetOrder(orderId: string) {
@@ -167,32 +194,46 @@ export async function adminGetOrder(orderId: string) {
     .eq('id', orderId)
     .single();
   if (error) throw error;
-  return data;
+  return normalizeOrder(data);
 }
 
-export async function adminUpdateOrderStatus(
-  orderId:   string,
-  status:    string,
-  adminId:   string
+export async function adminUpdateOrder(
+  orderId: string,
+  updates: Partial<{
+    status:           string;
+    notes:            string | null;
+    shipping_method:  string | null;
+  }>,
+  adminId?: string
 ) {
   const supabase = getAdminClient();
   const { error } = await supabase
     .from('orders')
-    .update({ status })
+    .update(updates)
     .eq('id', orderId);
   if (error) throw error;
 
-  // Log the status change
-  try {
-    await supabase.from('inventory_logs').insert({
-      product_id: null,
-      change:     0,
-      reason:     `Order ${orderId} status → ${status}`,
-      admin_id:   adminId,
-    });
-  } catch {
-    /* optional log table */
+  if (updates.status && adminId) {
+    try {
+      await supabase.from('inventory_logs').insert({
+        product_id: null,
+        change:     0,
+        reason:     `Order ${orderId} status → ${updates.status}`,
+        admin_id:   adminId,
+      });
+    } catch {
+      /* optional log table */
+    }
   }
+}
+
+/** @deprecated use adminUpdateOrder */
+export async function adminUpdateOrderStatus(
+  orderId: string,
+  status: string,
+  adminId: string
+) {
+  return adminUpdateOrder(orderId, { status }, adminId);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -518,6 +559,17 @@ export async function adminGetAnalytics(days = 30) {
 // ══════════════════════════════════════════════════════════
 // NOTIFICATION CONFIG
 // ══════════════════════════════════════════════════════════
+
+export async function adminGetNotificationConfig() {
+  const supabase = getAdminClient();
+  const { data } = await supabase
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data;
+}
 
 export async function adminUpdateNotificationConfig(
   id:      string,

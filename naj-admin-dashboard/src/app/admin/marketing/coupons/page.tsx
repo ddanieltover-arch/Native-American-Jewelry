@@ -6,11 +6,12 @@ import { toast } from 'sonner';
 import { PageHeader, Card, Button, Badge, Table, ConfirmModal, Input, Select } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import { formatPrice, formatDate, cn } from '@/lib/utils';
-import { MOCK_COUPONS } from '@/lib/mock-data';
+import { adminPatch, adminPost, useAdminApi } from '@/lib/use-admin-api';
 import type { Coupon } from '@/types';
 
 export default function CouponsPage() {
-  const [coupons, setCoupons]   = useState<Coupon[]>(MOCK_COUPONS);
+  const { data, refetch } = useAdminApi<Coupon[]>('/api/admin/coupons');
+  const coupons = data ?? [];
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
   const [loading, setLoading]   = useState<string | null>(null);
@@ -26,10 +27,15 @@ export default function CouponsPage() {
 
   const toggleActive = async (coupon: Coupon) => {
     setLoading(coupon.id);
-    await new Promise((r) => setTimeout(r, 300));
-    setCoupons((prev) => prev.map((c) => c.id === coupon.id ? { ...c, active: !c.active } : c));
-    toast.success(`Coupon ${coupon.active ? 'deactivated' : 'activated'}`);
-    setLoading(null);
+    try {
+      await adminPatch('/api/admin/coupons', { id: coupon.id, active: !coupon.active });
+      toast.success(`Coupon ${coupon.active ? 'deactivated' : 'activated'}`);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const createCoupon = async () => {
@@ -38,34 +44,38 @@ export default function CouponsPage() {
       return;
     }
     setLoading('create');
-    await new Promise((r) => setTimeout(r, 500));
-    const newCoupon: Coupon = {
-      id:            `coup-${Date.now()}`,
-      code:          form.code.trim().toUpperCase(),
-      type:          form.type,
-      value:         parseFloat(form.value),
-      min_order:     parseFloat(form.min_order) || 0,
-      max_uses:      form.max_uses ? parseInt(form.max_uses) : null,
-      used_count:    0,
-      applicable_to: 'all',
-      expires_at:    form.expires_at || null,
-      active:        true,
-      created_at:    new Date().toISOString(),
-    };
-    setCoupons((prev) => [newCoupon, ...prev]);
-    toast.success('Coupon created');
-    setCreating(false);
-    setForm({ code: '', type: 'percent', value: '', min_order: '0', max_uses: '', expires_at: '' });
-    setLoading(null);
+    try {
+      await adminPost('/api/admin/coupons', {
+        code: form.code.trim(),
+        type: form.type,
+        value: parseFloat(form.value),
+        min_order: parseFloat(form.min_order) || 0,
+        max_uses: form.max_uses ? parseInt(form.max_uses, 10) : undefined,
+        expires_at: form.expires_at || undefined,
+      });
+      toast.success('Coupon created');
+      setCreating(false);
+      setForm({ code: '', type: 'percent', value: '', min_order: '0', max_uses: '', expires_at: '' });
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Create failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const deleteCoupon = async (coupon: Coupon) => {
     setLoading(`del-${coupon.id}`);
-    await new Promise((r) => setTimeout(r, 400));
-    setCoupons((prev) => prev.filter((c) => c.id !== coupon.id));
-    toast.success('Coupon deleted');
-    setDeleteTarget(null);
-    setLoading(null);
+    try {
+      await adminPatch('/api/admin/coupons', { id: coupon.id, action: 'delete' });
+      toast.success('Coupon deleted');
+      setDeleteTarget(null);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const copyCode = (code: string) => {

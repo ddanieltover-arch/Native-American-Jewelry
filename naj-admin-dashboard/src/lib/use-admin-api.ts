@@ -8,6 +8,8 @@ function getAuthHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${decodeURIComponent(token)}` } : {};
 }
 
+const fetchOpts: RequestInit = { credentials: 'include' };
+
 export function useAdminApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(!!url);
@@ -20,7 +22,7 @@ export function useAdminApi<T>(url: string | null) {
     if (!url) return;
     setLoading(true);
     setError(null);
-    fetch(url, { headers: getAuthHeaders() })
+    fetch(url, { ...fetchOpts, headers: getAuthHeaders() })
       .then(async (r) => {
         const json = await r.json();
         if (!r.ok) throw new Error(json.error ?? 'Request failed');
@@ -34,13 +36,32 @@ export function useAdminApi<T>(url: string | null) {
   return { data, loading, error, refetch };
 }
 
-export async function adminPost(url: string, body?: unknown) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+async function parseJson(res: Response) {
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? 'Request failed');
+  if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+  return json;
+}
+
+export async function adminPost(url: string, body?: unknown) {
+  const json = await parseJson(
+    await fetch(url, {
+      method: 'POST',
+      ...fetchOpts,
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  );
+  return json;
+}
+
+export async function adminPatch(url: string, body: unknown) {
+  const json = await parseJson(
+    await fetch(url, {
+      method: 'PATCH',
+      ...fetchOpts,
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(body),
+    })
+  );
   return json;
 }

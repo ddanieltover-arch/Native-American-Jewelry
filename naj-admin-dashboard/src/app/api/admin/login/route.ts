@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
   if (authError) {
     return NextResponse.json({ error: authError.message }, { status: 401 });
   }
@@ -81,5 +81,13 @@ export async function POST(request: NextRequest) {
   cookiesToSet.forEach(({ name, value, options }) => {
     response.cookies.set(name, value, options);
   });
+  if (authData.session?.access_token) {
+    response.cookies.set('admin_token', authData.session.access_token, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+  }
   return response;
 }

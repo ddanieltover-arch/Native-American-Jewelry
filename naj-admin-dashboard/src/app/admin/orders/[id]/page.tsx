@@ -1,17 +1,17 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle, XCircle, Package, MapPin, CreditCard, RotateCcw, Truck } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, Package, MapPin, RotateCcw, Truck, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge, Button, Card, ConfirmModal, Select } from '@/components/admin/ui';
+import { Badge, Button, Card, ConfirmModal, Select, Textarea, Input } from '@/components/admin/ui';
 import {
-  cn, formatPrice, formatDateTime, formatDate,
+  cn, formatPrice, formatDateTime,
   ORDER_STATUS_LABELS, ORDER_STATUS_COLORS,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_COLORS,
   PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS,
 } from '@/lib/utils';
-import { MOCK_ORDERS } from '@/lib/mock-data';
+import { adminPatch, adminPost, useAdminApi } from '@/lib/use-admin-api';
 import type { AdminOrder, OrderStatus, PaymentStatus } from '@/types';
 
 const ORDER_STATUS_OPTIONS = [
@@ -25,67 +25,69 @@ const ORDER_STATUS_OPTIONS = [
   { value: 'refunded',          label: 'Refunded'          },
 ];
 
-const TIMELINE_STEPS: { status: OrderStatus; label: string }[] = [
-  { status: 'awaiting_payment',  label: 'Order Placed'       },
-  { status: 'payment_uploaded',  label: 'Payment Uploaded'   },
-  { status: 'payment_confirmed', label: 'Payment Verified'   },
-  { status: 'processing',        label: 'Processing'         },
-  { status: 'shipped',           label: 'Shipped'            },
-  { status: 'delivered',         label: 'Delivered'          },
-];
-
-const STEP_INDEX: Record<string, number> = Object.fromEntries(
-  TIMELINE_STEPS.map((s, i) => [s.status, i])
-);
-
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const initial = MOCK_ORDERS.find((o) => o.id === id) ?? MOCK_ORDERS[0];
+  const { data: order, loading, error, refetch } = useAdminApi<AdminOrder>(`/api/admin/orders/${id}`);
 
-  const [order, setOrder]             = useState<AdminOrder>(initial);
-  const [loading, setLoading]         = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
+  const [shippingMethod, setShippingMethod] = useState('');
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [confirmRefund, setConfirmRefund] = useState(false);
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [showTracking, setShowTracking]     = useState(false);
 
-  const currentStep = STEP_INDEX[order.status] ?? -1;
+  useEffect(() => {
+    if (!order) return;
+    setNotes(order.notes ?? '');
+    setShippingMethod(order.shipping_method ?? '');
+  }, [order]);
+
+  const patchOrder = async (updates: Record<string, unknown>, msg: string) => {
+    setLoadingAction('save');
+    try {
+      await adminPatch(`/api/admin/orders/${id}`, updates);
+      toast.success(msg);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
 
   const updatePaymentStatus = async (newStatus: PaymentStatus) => {
-    setLoading('payment');
-    await new Promise((r) => setTimeout(r, 600));
-    setOrder((prev) => ({
-      ...prev,
-      payment: prev.payment ? { ...prev.payment, status: newStatus, verified_at: new Date().toISOString() } : prev.payment,
-      status: newStatus === 'confirmed' ? 'processing' : newStatus === 'failed' ? 'cancelled' : prev.status,
-    }));
-    toast.success(`Payment marked as ${PAYMENT_STATUS_LABELS[newStatus]}`);
-    setLoading(null);
+    if (!order?.payment) return;
+    setLoadingAction('payment');
+    try {
+      await adminPost(`/api/admin/payments/${order.payment.id}/verify`, {
+        status: newStatus,
+        notes: {
+          customerEmail: order.customer?.email,
+          orderNumber: order.order_number,
+        },
+      });
+      toast.success(`Payment marked as ${PAYMENT_STATUS_LABELS[newStatus]}`);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Payment update failed');
+    } finally {
+      setLoadingAction(null);
+    }
   };
 
-  const updateOrderStatus = async (newStatus: OrderStatus) => {
-    setLoading('status');
-    await new Promise((r) => setTimeout(r, 400));
-    setOrder((prev) => ({ ...prev, status: newStatus }));
-    toast.success(`Order status updated to ${ORDER_STATUS_LABELS[newStatus]}`);
-    setLoading(null);
-  };
+  if (loading) {
+    return <p className="text-sm text-gray-500 p-8">Loading order…</p>;
+  }
 
-  const processRefund = async () => {
-    setLoading('refund');
-    await new Promise((r) => setTimeout(r, 700));
-    setOrder((prev) => ({
-      ...prev,
-      status: 'refunded',
-      payment: prev.payment ? { ...prev.payment, status: 'refunded' } : prev.payment,
-    }));
-    toast.success('Refund processed');
-    setLoading(null);
-    setConfirmRefund(false);
-  };
+  if (error || !order) {
+    return (
+      <div className="p-8 space-y-4">
+        <p className="text-red-600">{error ?? 'Order not found'}</p>
+        <Link href="/admin/orders"><Button variant="secondary">Back to Orders</Button></Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 max-w-5xl">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/admin/orders">
           <Button variant="ghost" size="sm"><ArrowLeft size={14} /> Orders</Button>
@@ -99,44 +101,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         </Badge>
       </div>
 
-      {/* Order timeline */}
-      {!['cancelled', 'refunded'].includes(order.status) && (
-        <Card title="Order Progress">
-          <div className="flex items-center gap-0">
-            {TIMELINE_STEPS.map((step, i) => {
-              const done    = i <= currentStep;
-              const current = i === currentStep;
-              return (
-                <div key={step.status} className="flex items-center flex-1 last:flex-none">
-                  <div className="flex flex-col items-center">
-                    <div className={cn(
-                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all',
-                      done && !current && 'border-green-500 bg-green-500 text-white',
-                      current && 'border-blue-500 bg-blue-500 text-white',
-                      !done && 'border-gray-200 bg-white text-gray-400'
-                    )}>
-                      {done && !current ? <CheckCircle size={14} /> : i + 1}
-                    </div>
-                    <p className={cn('text-[10px] mt-1 text-center max-w-[70px] leading-tight',
-                      done ? 'text-gray-700 font-medium' : 'text-gray-400'
-                    )}>
-                      {step.label}
-                    </p>
-                  </div>
-                  {i < TIMELINE_STEPS.length - 1 && (
-                    <div className={cn('flex-1 h-0.5 mb-5 mx-1', i < currentStep ? 'bg-green-400' : 'bg-gray-200')} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* Left: items + payment */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Order items */}
           <Card title="Items Ordered">
             <div className="divide-y divide-gray-100">
               {order.items.map((item) => (
@@ -152,7 +118,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 </div>
               ))}
             </div>
-
             <div className="border-t border-gray-200 mt-3 pt-3 space-y-1.5">
               <div className="flex justify-between text-sm text-gray-500">
                 <span>Subtotal</span><span>{formatPrice(order.subtotal)}</span>
@@ -173,7 +138,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             </div>
           </Card>
 
-          {/* Payment verification */}
           <Card title="Payment Verification">
             {order.payment ? (
               <div className="space-y-4">
@@ -192,73 +156,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   </Badge>
                 </div>
 
-                {order.payment.transaction_ref && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">Transaction Reference</p>
-                    <p className="text-sm font-mono text-gray-800">{order.payment.transaction_ref}</p>
-                  </div>
-                )}
-
-                {order.payment.transaction_note && (
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">Customer Note</p>
-                    <p className="text-sm text-gray-700">{order.payment.transaction_note}</p>
-                  </div>
-                )}
-
-                {/* Payment proof */}
-                {order.payment.proof_url ? (
+                {order.payment.proof_url && (
                   <div>
                     <p className="text-xs text-gray-500 mb-2">Payment Proof</p>
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
-                      <img
-                        src={order.payment.proof_url}
-                        alt="Payment proof"
-                        className="w-full max-h-64 object-contain bg-gray-50"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-                    No payment proof uploaded yet
+                    <img
+                      src={order.payment.proof_url}
+                      alt="Payment proof"
+                      className="w-full max-h-64 object-contain bg-gray-50 border border-gray-200 rounded-lg"
+                    />
                   </div>
                 )}
 
-                {order.payment.verified_at && (
-                  <p className="text-xs text-gray-400">
-                    Verified {formatDateTime(order.payment.verified_at)}
-                  </p>
-                )}
-
-                {/* Verification actions */}
                 {order.payment.status === 'uploaded' && (
                   <div className="flex gap-3 pt-2 border-t border-gray-200">
-                    <Button
-                      className="flex-1"
-                      loading={loading === 'payment'}
-                      onClick={() => updatePaymentStatus('confirmed')}
-                    >
+                    <Button className="flex-1" loading={loadingAction === 'payment'} onClick={() => updatePaymentStatus('confirmed')}>
                       <CheckCircle size={14} /> Confirm Payment
                     </Button>
-                    <Button
-                      variant="danger"
-                      loading={loading === 'payment'}
-                      onClick={() => updatePaymentStatus('failed')}
-                    >
+                    <Button variant="danger" loading={loadingAction === 'payment'} onClick={() => updatePaymentStatus('failed')}>
                       <XCircle size={14} /> Mark Failed
                     </Button>
                   </div>
-                )}
-
-                {order.payment.status === 'confirmed' && order.status !== 'refunded' && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setConfirmRefund(true)}
-                    className="w-full"
-                  >
-                    <RotateCcw size={13} /> Process Refund
-                  </Button>
                 )}
               </div>
             ) : (
@@ -267,93 +184,58 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </Card>
         </div>
 
-        {/* Right sidebar */}
         <div className="space-y-5">
-          {/* Status control */}
           <Card title="Order Status">
             <Select
               value={order.status}
-              onChange={(e) => updateOrderStatus(e.target.value as OrderStatus)}
+              onChange={(e) => patchOrder({ status: e.target.value }, `Status → ${ORDER_STATUS_LABELS[e.target.value as OrderStatus]}`)}
               options={ORDER_STATUS_OPTIONS}
             />
-            {loading === 'status' && <p className="text-xs text-gray-400 mt-2">Updating…</p>}
           </Card>
 
-          {/* Shipping info */}
           <Card title="Shipping">
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
-                <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-gray-700">
-                  <p>{order.shipping_address.line1}</p>
-                  {order.shipping_address.line2 && <p>{order.shipping_address.line2}</p>}
-                  <p>{order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zip}</p>
-                  <p>{order.shipping_address.country}</p>
-                </div>
+            <Input
+              label="Shipping / tracking"
+              value={shippingMethod}
+              onChange={(e) => setShippingMethod(e.target.value)}
+              placeholder="e.g. USPS 9400…"
+            />
+            <Button
+              className="w-full mt-3"
+              size="sm"
+              variant="secondary"
+              loading={loadingAction === 'save'}
+              onClick={() => patchOrder({ shipping_method: shippingMethod || null }, 'Shipping info saved')}
+            >
+              <Truck size={13} /> Save shipping
+            </Button>
+            <div className="flex items-start gap-2 mt-4">
+              <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-gray-700">
+                <p>{order.shipping_address.line1}</p>
+                {order.shipping_address.line2 && <p>{order.shipping_address.line2}</p>}
+                <p>{order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zip}</p>
+                <p>{order.shipping_address.country}</p>
               </div>
-              {order.shipping_method && (
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <Truck size={13} />
-                  <span>{order.shipping_method}</span>
-                </div>
-              )}
-              {order.status === 'processing' && (
-                <div>
-                  {showTracking ? (
-                    <div className="flex gap-2 mt-2">
-                      <input
-                        value={trackingNumber}
-                        onChange={(e) => setTrackingNumber(e.target.value)}
-                        placeholder="Enter tracking #"
-                        className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          updateOrderStatus('shipped');
-                          setShowTracking(false);
-                          toast.success('Order marked as shipped');
-                        }}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="w-full mt-2"
-                      onClick={() => setShowTracking(true)}
-                    >
-                      <Truck size={13} /> Mark as Shipped
-                    </Button>
-                  )}
-                </div>
-              )}
             </div>
           </Card>
 
-          {/* Customer */}
-          <Card title="Customer">
-            {order.customer ? (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-900">
-                  {order.customer.first_name} {order.customer.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{order.customer.email}</p>
-                {order.customer.phone && <p className="text-xs text-gray-500">{order.customer.phone}</p>}
-                <Link href={`/admin/customers`}>
-                  <Button variant="ghost" size="sm" className="mt-1 -ml-1">View Profile →</Button>
-                </Link>
-              </div>
-            ) : <p className="text-sm text-gray-400">Guest order</p>}
+          <Card title="Order Notes">
+            <Textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes…" />
+            <Button
+              className="w-full mt-2"
+              size="sm"
+              loading={loadingAction === 'save'}
+              onClick={() => patchOrder({ notes: notes || null }, 'Notes saved')}
+            >
+              <Save size={13} /> Save notes
+            </Button>
           </Card>
 
-          {/* Notes */}
-          {order.notes && (
-            <Card title="Order Notes">
-              <p className="text-sm text-gray-700">{order.notes}</p>
-            </Card>
+          {order.payment?.status === 'confirmed' && order.status !== 'refunded' && (
+            <Button variant="secondary" size="sm" className="w-full" onClick={() => setConfirmRefund(true)}>
+              <RotateCcw size={13} /> Process Refund
+            </Button>
           )}
         </div>
       </div>
@@ -361,10 +243,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <ConfirmModal
         open={confirmRefund}
         title="Process Refund"
-        message={`Are you sure you want to refund ${formatPrice(order.total)} for order ${order.order_number}? This cannot be undone.`}
+        message={`Refund ${formatPrice(order.total)} for ${order.order_number}?`}
         confirmLabel="Process Refund"
-        loading={loading === 'refund'}
-        onConfirm={processRefund}
+        loading={loadingAction === 'payment'}
+        onConfirm={() => { updatePaymentStatus('refunded'); setConfirmRefund(false); }}
         onCancel={() => setConfirmRefund(false)}
       />
     </div>

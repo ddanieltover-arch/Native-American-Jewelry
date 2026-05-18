@@ -5,11 +5,12 @@ import { Truck, Plus, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Card, Button, Input, Badge } from '@/components/admin/ui';
 import { cn, formatPrice } from '@/lib/utils';
-import { MOCK_SHIPPING_RATES } from '@/lib/mock-data';
+import { adminPatch, useAdminApi } from '@/lib/use-admin-api';
 import type { ShippingRate } from '@/types';
 
 export default function ShippingPage() {
-  const [rates, setRates] = useState<ShippingRate[]>(MOCK_SHIPPING_RATES);
+  const { data, refetch } = useAdminApi<ShippingRate[]>('/api/admin/shipping');
+  const rates = data ?? [];
   const [editing, setEditing] = useState<string | null>(null);
   const [edits, setEdits]     = useState<Partial<ShippingRate>>({});
   const [loading, setLoading] = useState(false);
@@ -28,16 +29,26 @@ export default function ShippingPage() {
 
   const saveEdit = async (id: string) => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setRates((prev) => prev.map((r) => r.id === id ? { ...r, ...edits } as ShippingRate : r));
-    toast.success('Shipping rate updated');
-    setEditing(null);
-    setLoading(false);
+    try {
+      await adminPatch('/api/admin/shipping', { id, ...edits });
+      toast.success('Shipping rate updated');
+      setEditing(null);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleActive = async (id: string) => {
-    setRates((prev) => prev.map((r) => r.id === id ? { ...r, active: !r.active } : r));
-    toast.success('Rate updated');
+  const toggleActive = async (id: string, active: boolean) => {
+    try {
+      await adminPatch('/api/admin/shipping', { id, active: !active });
+      toast.success('Rate updated');
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
   };
 
   const usaRates  = rates.filter((r) => r.zone === 'usa');
@@ -150,7 +161,7 @@ export default function ShippingPage() {
           <div>
             <p className="text-xs text-gray-400 mb-1">Status</p>
             <button
-              onClick={() => toggleActive(rate.id)}
+              onClick={() => toggleActive(rate.id, rate.active)}
               className={cn(
                 'relative inline-flex h-5 w-9 rounded-full transition-colors',
                 rate.active ? 'bg-green-500' : 'bg-gray-300'

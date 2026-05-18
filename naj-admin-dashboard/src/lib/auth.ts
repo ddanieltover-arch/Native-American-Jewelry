@@ -3,33 +3,52 @@
 // Drop into naj-admin/src/lib/auth.ts
 // ═══════════════════════════════════════════════════════════
 import { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 
-// ─── Verify admin token from cookie or Authorization header ──
+// ─── Verify admin from Bearer token, admin_token cookie, or Supabase session ──
 export async function verifyAdminToken(req: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+
+  let userEmail: string | null = null;
+
   const token =
     req.cookies.get('admin_token')?.value ??
-    req.headers.get('authorization')?.replace('Bearer ', '');
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
-  if (!token) return null;
+  if (token) {
+    const service = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: { user } } = await service.auth.getUser(token);
+    if (user?.email) userEmail = user.email;
+  }
+
+  if (!userEmail && anonKey) {
+    const supabase = createServerClient(supabaseUrl, anonKey, {
+      cookies: {
+        getAll: () => req.cookies.getAll(),
+        setAll: () => {},
+      },
+    });
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email) userEmail = user.email;
+  }
+
+  if (!userEmail) return null;
 
   try {
-    // Use Supabase to verify the JWT and load the admin profile
-    const supabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    const supabase = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
-    // Decode the user from the Supabase JWT
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return null;
-
-    // Fetch the admin_users row for role/permissions
     const { data: adminUser } = await supabase
       .from('admin_users')
       .select('id, email, role, totp_enabled')
-      .eq('email', user.email!.trim().toLowerCase())
+      .eq('email', userEmail.trim().toLowerCase())
       .single();
 
     if (!adminUser) return null;

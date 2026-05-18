@@ -1,31 +1,36 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ShoppingBag, Download, Filter } from 'lucide-react';
+import { ShoppingBag, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   PageHeader, Card, Badge, Button, SearchInput,
-  Table, Pagination, Tabs, EmptyState, Select,
+  Table, Pagination, EmptyState,
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import {
   formatPrice, formatDateTime, ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS, PAYMENT_METHOD_LABELS, cn,
 } from '@/lib/utils';
-import { MOCK_ORDERS } from '@/lib/mock-data';
-import type { AdminOrder, OrderStatus } from '@/types';
+import type { AdminOrder } from '@/types';
 
-const ALL_STATUSES: { value: string; label: string }[] = [
-  { value: '', label: 'All Statuses' },
-  { value: 'awaiting_payment',  label: 'Awaiting Payment'  },
-  { value: 'payment_uploaded',  label: 'Payment Uploaded'  },
-  { value: 'payment_confirmed', label: 'Payment Confirmed' },
-  { value: 'processing',        label: 'Processing'        },
-  { value: 'shipped',           label: 'Shipped'           },
-  { value: 'delivered',         label: 'Delivered'         },
-  { value: 'cancelled',         label: 'Cancelled'         },
-  { value: 'refunded',          label: 'Refunded'          },
-];
+const PER_PAGE = 15;
+
+type OrdersResponse = { orders: AdminOrder[]; total: number };
+
+async function fetchOrders(params: Record<string, string>): Promise<OrdersResponse> {
+  const qs = new URLSearchParams(params);
+  const match = document.cookie.match(/(?:^|;\s*)admin_token=([^;]+)/);
+  const token = match?.[1];
+  const headers: HeadersInit = token
+    ? { Authorization: `Bearer ${decodeURIComponent(token)}` }
+    : {};
+  const res = await fetch(`/api/admin/orders?${qs}`, { headers, credentials: 'include' });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? 'Failed to load orders');
+  return json;
+}
 
 const COLUMNS: Column<AdminOrder>[] = [
   {
@@ -53,9 +58,7 @@ const COLUMNS: Column<AdminOrder>[] = [
   {
     key: 'payment', label: 'Payment',
     render: (o) => o.payment ? (
-      <span className="text-xs text-gray-600">
-        {PAYMENT_METHOD_LABELS[o.payment.method]}
-      </span>
+      <span className="text-xs text-gray-600">{PAYMENT_METHOD_LABELS[o.payment.method]}</span>
     ) : <span className="text-gray-300 text-xs">—</span>,
   },
   {
@@ -65,86 +68,75 @@ const COLUMNS: Column<AdminOrder>[] = [
   {
     key: 'items', label: 'Items',
     render: (o) => (
-      <span className="text-xs text-gray-500">{o.items.length} item{o.items.length !== 1 ? 's' : ''}</span>
+      <span className="text-xs text-gray-500">{o.items?.length ?? 0} item{(o.items?.length ?? 0) !== 1 ? 's' : ''}</span>
     ),
   },
 ];
 
 export default function OrdersPage() {
-  const router  = useRouter();
-  const [search, setSearch]   = useState('');
-  const [status, setStatus]   = useState('');
-  const [page, setPage]       = useState(1);
-  const [sortKey, setSortKey] = useState('created_at');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const PER_PAGE = 10;
+  const router = useRouter();
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
 
-  const filtered = useMemo(() => {
-    let list = [...MOCK_ORDERS];
-
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (o) =>
-          o.order_number.toLowerCase().includes(q) ||
-          o.customer?.email.toLowerCase().includes(q) ||
-          o.customer?.first_name?.toLowerCase().includes(q)
-      );
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string> = {
+        page: String(page),
+        per_page: String(PER_PAGE),
+      };
+      if (status) params.status = status;
+      if (search.trim()) params.search = search.trim();
+      const result = await fetchOrders(params);
+      setOrders(result.orders);
+      setTotal(result.total);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load orders');
+      setOrders([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
     }
+  }, [page, status, search]);
 
-    if (status) list = list.filter((o) => o.status === status);
+  useEffect(() => {
+    const t = setTimeout(load, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [load, search]);
 
-    list.sort((a, b) => {
-      let aVal: string | number = a[sortKey as keyof AdminOrder] as string | number ?? '';
-      let bVal: string | number = b[sortKey as keyof AdminOrder] as string | number ?? '';
-      if (sortKey === 'total') { aVal = Number(aVal); bVal = Number(bVal); }
-      return sortDir === 'asc'
-        ? String(aVal).localeCompare(String(bVal))
-        : String(bVal).localeCompare(String(aVal));
-    });
-
-    return list;
-  }, [search, status, sortKey, sortDir]);
-
-  const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-
-  const handleSort = (key: string) => {
-    if (key === sortKey) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
-    setPage(1);
+  const tabCounts = {
+    all: total,
+    awaiting_payment: orders.filter((o) => o.status === 'awaiting_payment').length,
+    payment_uploaded: orders.filter((o) => o.status === 'payment_uploaded').length,
+    processing: orders.filter((o) => ['processing', 'payment_confirmed'].includes(o.status)).length,
+    shipped: orders.filter((o) => o.status === 'shipped').length,
+    delivered: orders.filter((o) => o.status === 'delivered').length,
   };
-
-  // Status tab counts
-  const tabCounts = useMemo(() => ({
-    all:              MOCK_ORDERS.length,
-    awaiting_payment: MOCK_ORDERS.filter((o) => o.status === 'awaiting_payment').length,
-    payment_uploaded: MOCK_ORDERS.filter((o) => o.status === 'payment_uploaded').length,
-    processing:       MOCK_ORDERS.filter((o) => ['processing', 'payment_confirmed'].includes(o.status)).length,
-    shipped:          MOCK_ORDERS.filter((o) => o.status === 'shipped').length,
-    delivered:        MOCK_ORDERS.filter((o) => o.status === 'delivered').length,
-  }), []);
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Orders"
-        subtitle={`${MOCK_ORDERS.length} total orders`}
+        subtitle={`${total} orders`}
         action={
-          <Button variant="secondary" size="sm">
+          <Button variant="secondary" size="sm" disabled>
             <Download size={14} /> Export CSV
           </Button>
         }
       />
 
-      {/* Quick filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {[
-          { key: '',               label: 'All',       count: tabCounts.all              },
-          { key: 'awaiting_payment', label: '⏳ Awaiting', count: tabCounts.awaiting_payment },
-          { key: 'payment_uploaded', label: '📎 Proof Uploaded', count: tabCounts.payment_uploaded },
-          { key: 'processing',     label: 'Processing',count: tabCounts.processing       },
-          { key: 'shipped',        label: '🚚 Shipped', count: tabCounts.shipped          },
-          { key: 'delivered',      label: '✅ Delivered',count: tabCounts.delivered       },
+          { key: '', label: 'All', count: tabCounts.all },
+          { key: 'awaiting_payment', label: 'Awaiting', count: tabCounts.awaiting_payment },
+          { key: 'payment_uploaded', label: 'Proof Uploaded', count: tabCounts.payment_uploaded },
+          { key: 'processing', label: 'Processing', count: tabCounts.processing },
+          { key: 'shipped', label: 'Shipped', count: tabCounts.shipped },
+          { key: 'delivered', label: 'Delivered', count: tabCounts.delivered },
         ].map((t) => (
           <button
             key={t.key}
@@ -169,27 +161,27 @@ export default function OrdersPage() {
           <SearchInput
             value={search}
             onChange={(v) => { setSearch(v); setPage(1); }}
-            placeholder="Search order #, customer email…"
+            placeholder="Search order #…"
             className="flex-1 min-w-[200px] max-w-sm"
           />
         </div>
 
-        <Table<AdminOrder>
-          columns={COLUMNS}
-          data={paginated}
-          keyField="id"
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={handleSort}
-          onRowClick={(o) => router.push(`/admin/orders/${o.id}`)}
-          emptyMessage="No orders found"
-        />
-        <Pagination
-          page={page}
-          total={filtered.length}
-          perPage={PER_PAGE}
-          onChange={setPage}
-        />
+        {loading ? (
+          <p className="text-sm text-gray-500 py-12 text-center">Loading orders…</p>
+        ) : orders.length === 0 ? (
+          <EmptyState icon={ShoppingBag} title="No orders yet" description="Orders from checkout will appear here" />
+        ) : (
+          <>
+            <Table<AdminOrder>
+              columns={COLUMNS}
+              data={orders}
+              keyField="id"
+              onRowClick={(o) => router.push(`/admin/orders/${o.id}`)}
+              emptyMessage="No orders found"
+            />
+            <Pagination page={page} total={total} perPage={PER_PAGE} onChange={setPage} />
+          </>
+        )}
       </Card>
     </div>
   );

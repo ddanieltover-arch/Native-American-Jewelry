@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Users, Ban, StickyNote } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -9,50 +9,56 @@ import {
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
 import { formatPrice, formatDate, timeAgo, cn } from '@/lib/utils';
-import { MOCK_CUSTOMERS } from '@/lib/mock-data';
+import { adminPatch, useAdminApi } from '@/lib/use-admin-api';
 import type { AdminCustomer } from '@/types';
 
+type CustomersResponse = { customers: AdminCustomer[]; total: number };
+
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<AdminCustomer[]>(MOCK_CUSTOMERS);
   const [search, setSearch]       = useState('');
+  const [page, setPage]           = useState(1);
+  const { data, refetch } = useAdminApi<CustomersResponse>(
+    `/api/admin/customers?page=${page}&per_page=15${search ? `&search=${encodeURIComponent(search)}` : ''}`
+  );
+  const customers = data?.customers ?? [];
   const [selected, setSelected]   = useState<AdminCustomer | null>(null);
   const [noteText, setNoteText]   = useState('');
-  const [page, setPage]           = useState(1);
   const [loading, setLoading]     = useState<string | null>(null);
+  const total = data?.total ?? 0;
   const PER_PAGE = 15;
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return customers;
-    const q = search.toLowerCase();
-    return customers.filter(
-      (c) =>
-        c.email.toLowerCase().includes(q) ||
-        c.first_name?.toLowerCase().includes(q) ||
-        c.last_name?.toLowerCase().includes(q)
-    );
-  }, [customers, search]);
 
   const toggleBlacklist = async (customer: AdminCustomer) => {
     setLoading(customer.id);
-    await new Promise((r) => setTimeout(r, 500));
-    setCustomers((prev) =>
-      prev.map((c) => c.id === customer.id ? { ...c, blacklisted: !c.blacklisted } : c)
-    );
-    if (selected?.id === customer.id) setSelected((p) => p ? { ...p, blacklisted: !p.blacklisted } : p);
-    toast.success(customer.blacklisted ? 'Customer unblacklisted' : 'Customer blacklisted');
-    setLoading(null);
+    try {
+      await adminPatch('/api/admin/customers', {
+        id: customer.id,
+        blacklisted: !customer.blacklisted,
+      });
+      if (selected?.id === customer.id) {
+        setSelected((p) => p ? { ...p, blacklisted: !p.blacklisted } : p);
+      }
+      toast.success(customer.blacklisted ? 'Customer unblacklisted' : 'Customer blacklisted');
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const saveNote = async () => {
     if (!selected) return;
     setLoading('note');
-    await new Promise((r) => setTimeout(r, 400));
-    setCustomers((prev) =>
-      prev.map((c) => c.id === selected.id ? { ...c, notes: noteText } : c)
-    );
-    setSelected((p) => p ? { ...p, notes: noteText } : p);
-    toast.success('Note saved');
-    setLoading(null);
+    try {
+      await adminPatch('/api/admin/customers', { id: selected.id, notes: noteText });
+      setSelected((p) => p ? { ...p, notes: noteText } : p);
+      toast.success('Note saved');
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setLoading(null);
+    }
   };
 
   const columns: Column<AdminCustomer>[] = [
@@ -121,12 +127,12 @@ export default function CustomersPage() {
 
         <Table<AdminCustomer>
           columns={columns}
-          data={filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE)}
+          data={customers}
           keyField="id"
           onRowClick={(c) => { setSelected(c); setNoteText(c.notes ?? ''); }}
           emptyMessage="No customers found"
         />
-        <Pagination page={page} total={filtered.length} perPage={PER_PAGE} onChange={setPage} />
+        <Pagination page={page} total={total} perPage={PER_PAGE} onChange={setPage} />
       </Card>
 
       {/* Customer slide-over */}

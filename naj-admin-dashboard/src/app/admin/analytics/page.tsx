@@ -8,7 +8,8 @@ import {
 } from 'recharts';
 import { PageHeader, Card, StatCard } from '@/components/admin/ui';
 import { formatPrice, formatNumber, ORDER_STATUS_LABELS, cn } from '@/lib/utils';
-import { MOCK_ANALYTICS } from '@/lib/mock-data';
+import { useAdminApi } from '@/lib/use-admin-api';
+import type { AnalyticsOverview } from '@/types';
 
 const STATUS_COLORS: Record<string, string> = {
   delivered:         '#22c55e',
@@ -25,7 +26,12 @@ const PERIODS = ['7d', '14d', '30d'] as const;
 
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState<'7d' | '14d' | '30d'>('30d');
-  const analytics = MOCK_ANALYTICS;
+  const days = period === '7d' ? 7 : period === '14d' ? 14 : 30;
+  const { data: analytics, loading } = useAdminApi<AnalyticsOverview>(`/api/admin/analytics?days=${days}`);
+
+  if (loading || !analytics) {
+    return <p className="text-sm text-gray-500 p-8">Loading analytics…</p>;
+  }
 
   const chartData = period === '7d'
     ? analytics.revenueChart.slice(-7)
