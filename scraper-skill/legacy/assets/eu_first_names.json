@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "description": "Common first names per EU country, mixed gender. Pulled from EU national stats agencies (most-popular birth names, last 5 years). Used by SalesNotification.tsx so 'Lukas from Hamburg' reads naturally and 'Lukas from Lisbon' doesn't.",
+    "version": "1.0",
+    "updated": "2026-05"
+  },
+  "DE": ["Lukas", "Maximilian", "Felix", "Leon", "Paul", "Julia", "Anna", "Sophie", "Marie", "Lena", "Hannah", "Mia", "Emma", "Lina", "Lara", "Jonas", "Tim", "Elias"],
+  "FR": ["Lucas", "Hugo", "Léo", "Jules", "Louis", "Adam", "Emma", "Léa", "Chloé", "Manon", "Camille", "Inès", "Sarah", "Louise", "Jade", "Nathan", "Théo", "Arthur"],
+  "IT": ["Francesco", "Alessandro", "Lorenzo", "Mattia", "Andrea", "Leonardo", "Giulia", "Sofia", "Aurora", "Alice", "Ginevra", "Emma", "Beatrice", "Anna", "Chiara", "Marco", "Luca", "Riccardo"],
+  "ES": ["Hugo", "Mateo", "Martín", "Lucas", "Leo", "Daniel", "Lucía", "Sofía", "María", "Martina", "Paula", "Julia", "Daniela", "Valeria", "Alma", "Pablo", "Álvaro", "Adrián"],
+  "PL": ["Antoni", "Jan", "Aleksander", "Franciszek", "Jakub", "Szymon", "Zofia", "Hanna", "Julia", "Maja", "Lena", "Alicja", "Pola", "Oliwia", "Maria", "Filip", "Mikołaj", "Wojciech"],
+  "NL": ["Daan", "Sem", "Lucas", "Levi", "Finn", "Noah", "Emma", "Mila", "Tess", "Sophie", "Julia", "Liv", "Yara", "Saar", "Lotte", "Bram", "Thomas", "Liam"],
+  "BE": ["Liam", "Louis", "Noah", "Lucas", "Arthur", "Adam", "Emma", "Mila", "Olivia", "Louise", "Alice", "Camille", "Elise", "Marie", "Anna", "Hugo", "Jules", "Mohamed"],
+  "SE": ["William", "Liam", "Noah", "Hugo", "Oliver", "Lucas", "Alice", "Maja", "Vera", "Wilma", "Elsa", "Astrid", "Olivia", "Alma", "Ebba", "Adam", "Nils", "Axel"],
+  "AT": ["David", "Maximilian", "Jakob", "Elias", "Tobias", "Lukas", "Emma", "Anna", "Marie", "Sophia", "Hannah", "Laura", "Lena", "Mia", "Emilia", "Jonas", "Philipp", "Felix"],
+  "PT": ["Francisco", "Martim", "João", "Afonso", "Tomás", "Duarte", "Maria", "Matilde", "Beatriz", "Leonor", "Carolina", "Mariana", "Sofia", "Inês", "Ana", "Diogo", "Rodrigo", "Santiago"],
+  "GR": ["Giorgos", "Dimitris", "Nikos", "Konstantinos", "Yannis", "Alexandros", "Maria", "Eleni", "Sophia", "Katerina", "Ioanna", "Anna", "Despoina", "Christina", "Athina", "Petros", "Andreas", "Stefanos"],
+  "DK": ["William", "Noah", "Oscar", "Oliver", "Lucas", "Carl", "Ida", "Emma", "Sofia", "Freja", "Alma", "Clara", "Olivia", "Nora", "Ella", "Anton", "Magnus", "Frederik"],
+  "FI": ["Leo", "Eino", "Onni", "Oliver", "Väinö", "Elias", "Sofia", "Aino", "Olivia", "Helmi", "Aada", "Eevi", "Lilja", "Iida", "Venla", "Eemil", "Niilo", "Toivo"],
+  "IE": ["Jack", "James", "Noah", "Conor", "Daniel", "Liam", "Emily", "Grace", "Fiadh", "Sophie", "Hannah", "Ava", "Emma", "Mia", "Ellie", "Adam", "Cian", "Patrick"],
+  "CZ": ["Jakub", "Jan", "Tomáš", "Adam", "Matyáš", "Filip", "Eliška", "Tereza", "Anna", "Sofie", "Adéla", "Natálie", "Karolína", "Viktorie", "Ema", "Petr", "Lukáš", "Vojtěch"],
+  "RO": ["Andrei", "David", "Mihai", "Alexandru", "Luca", "Ștefan", "Maria", "Sofia", "Ana", "Elena", "Andreea", "Ioana", "Alexandra", "Bianca", "Antonia", "Cristian", "Vlad", "Răzvan"],
+  "HU": ["Bence", "Máté", "Levente", "Marcell", "Dominik", "Ádám", "Hanna", "Anna", "Lili", "Zoé", "Emma", "Léna", "Boglárka", "Eszter", "Júlia", "Bálint", "Áron", "Botond"],
+  "CH": ["Liam", "Noah", "Matteo", "Leon", "Gabriel", "David", "Mia", "Emma", "Sofia", "Mila", "Olivia", "Lina", "Elena", "Laura", "Anna", "Luca", "Elias", "Tim"],
+  "_fallback": ["Alex", "Sam", "Robin", "Charlie", "Jordan", "Jamie", "Morgan"]
+}

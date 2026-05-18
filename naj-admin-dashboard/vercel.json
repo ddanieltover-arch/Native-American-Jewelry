@@ -1,4 +1,11 @@
 {
   "framework": "nextjs",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/admin",
+      "permanent": false
+    }
+  ]
 }

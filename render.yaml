@@ -1,0 +1,35 @@
+# Render Blueprint — Native American Jewelry scraper
+# Deploy: Render Dashboard → New → Blueprint → connect GitHub repo
+# Repo: https://github.com/ddanieltover-arch/Native-American-Jewelry
+
+services:
+  # HTTP API — health check + manual scrape trigger (admin calls this)
+  - type: web
+    name: naj-scraper-api
+    runtime: docker
+    rootDir: naj-scraper-service
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/index.js
+    healthCheckPath: /health
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: LOG_LEVEL
+        value: info
+
+  # Background worker — BullMQ processors + daily cron
+  - type: worker
+    name: naj-scraper-worker
+    runtime: docker
+    rootDir: naj-scraper-service
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/worker.js
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info

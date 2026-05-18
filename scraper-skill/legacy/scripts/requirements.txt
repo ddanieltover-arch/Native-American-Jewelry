@@ -1,0 +1,17 @@
+# Pinned to versions known to work together as of 2026-05.
+# Bump conservatively; playwright + supabase-py move fastest.
+
+playwright==1.50.0
+supabase==2.18.1
+httpx==0.28.1
+python-dotenv==1.0.1
+pydantic==2.10.6
+pandas==2.2.3
+openpyxl==3.1.5
+beautifulsoup4==4.12.3
+lxml==5.3.0
+python-slugify==8.0.4
+tenacity==9.0.0
+
+# Optional: synthetic fallback only
+anthropic==0.42.0

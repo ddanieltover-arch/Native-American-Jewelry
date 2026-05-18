@@ -4,6 +4,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/admin', request.url));
+  }
+
   if (pathname.startsWith('/admin/login') || pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
@@ -40,5 +44,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/', '/admin/:path*'],
 };

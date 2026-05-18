@@ -94,7 +94,9 @@ async function downloadImage(url: string, retries = 3): Promise<Buffer | null> {
 
       if (response.status !== 200) return null;
 
-      const contentType = response.headers['content-type'] ?? '';
+      const rawCt = response.headers['content-type'];
+      const contentType =
+        typeof rawCt === 'string' ? rawCt : Array.isArray(rawCt) ? rawCt[0] ?? '' : '';
       if (!contentType.includes('image')) {
         logger.warn('Non-image content type', { url, contentType });
         return null;

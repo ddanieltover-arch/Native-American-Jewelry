@@ -106,17 +106,21 @@ export async function createStealthContext(): Promise<BrowserContext> {
 
     // Canvas fingerprint noise
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (type: any, ...args: any[]) {
-      const ctx = originalGetContext.apply(this, [type, ...args]);
-      if (type === '2d' && ctx) {
-        const origFill = (ctx as CanvasRenderingContext2D).fillText.bind(ctx);
-        (ctx as CanvasRenderingContext2D).fillText = (...fArgs: any[]) => {
-          (ctx as CanvasRenderingContext2D).shadowBlur = Math.random() * 0.1;
-          return (origFill as any)(...fArgs);
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      type: string,
+      options?: unknown
+    ) {
+      const ctx = originalGetContext.call(this, type as '2d', options as CanvasRenderingContext2DSettings);
+      if (type === '2d' && ctx instanceof CanvasRenderingContext2D) {
+        const origFill = ctx.fillText.bind(ctx);
+        ctx.fillText = (...fArgs: Parameters<CanvasRenderingContext2D['fillText']>) => {
+          ctx.shadowBlur = Math.random() * 0.1;
+          return origFill(...fArgs);
         };
       }
       return ctx;
-    };
+    } as typeof HTMLCanvasElement.prototype.getContext;
   });
 
   return context;

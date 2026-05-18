@@ -179,10 +179,15 @@ function AdminTopbar({ title }: { title?: string }) {
 
 // ─── Shell layout ─────────────────────────────────────────
 export default function AdminShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const { setAdmin } = useAdminStore();
 
   // Hydrate mock session
   useEffect(() => { setAdmin(MOCK_ADMIN); }, [setAdmin]);
+
+  if (pathname === '/admin/login') {
+    return <>{children}</>;
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

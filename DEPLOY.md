@@ -49,14 +49,28 @@ vercel --prod
 
 Set `SCRAPER_SERVICE_URL` to your scraper host URL.
 
-## 5. Scraper + Redis (Railway / Render)
+## 5. Scraper on Render (recommended for production)
+
+Full guide: [naj-scraper-service/RENDER.md](naj-scraper-service/RENDER.md)
+
+1. Create **Upstash Redis** → copy `REDIS_URL`
+2. Render → **New → Blueprint** → connect [GitHub repo](https://github.com/ddanieltover-arch/Native-American-Jewelry)
+3. Add env vars to **naj-scraper-api** and **naj-scraper-worker** (Supabase, Redis, `SCRAPER_API_KEY`, etc.)
+4. Your scraper URL:
+
+```env
+SCRAPER_SERVICE_URL=https://naj-scraper-api.onrender.com
+```
+
+Set that in Vercel admin env + matching `SCRAPER_API_KEY`.
+
+**Local dev** (optional):
 
 ```bash
 cd naj-scraper-service
 docker-compose up -d
+# SCRAPER_SERVICE_URL=http://localhost:4000
 ```
-
-Or deploy `Dockerfile` with Redis (Upstash) and env from `.env.example`.
 
 ## 6. Smoke test
 
