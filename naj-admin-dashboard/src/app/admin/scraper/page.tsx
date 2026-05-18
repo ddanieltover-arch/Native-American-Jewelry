@@ -51,6 +51,7 @@ type ScraperStatus = {
   ok: boolean;
   configured: boolean;
   reachable: boolean;
+  redisConfigured?: boolean;
   scraperUrl?: string;
   error?: string | null;
 };
@@ -214,7 +215,17 @@ export default function ScraperPage() {
 
       {scraperStatus?.ok && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
-          Scraper connected{scraperStatus.scraperUrl ? ` — ${scraperStatus.scraperUrl}` : ''}
+          Scraper API connected{scraperStatus.scraperUrl ? ` — ${scraperStatus.scraperUrl}` : ''}
+        </div>
+      )}
+
+      {scraperStatus?.ok && scraperStatus.redisConfigured === false && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">Redis not connected</p>
+          <p className="mt-1 text-amber-800">
+            Add <code className="text-xs bg-amber-100 px-1 rounded">REDIS_URL</code> (Upstash) on Render, or set{' '}
+            <code className="text-xs bg-amber-100 px-1 rounded">SCRAPE_INLINE=true</code> on the API service.
+          </p>
         </div>
       )}
 

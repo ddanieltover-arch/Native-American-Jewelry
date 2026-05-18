@@ -9,12 +9,30 @@ export const redisConnection = new IORedis(config.REDIS_URL, {
   maxRetriesPerRequest: null,  // required by BullMQ
   enableReadyCheck:     false,
   lazyConnect:          true,
+  connectTimeout:       5_000,
+  commandTimeout:       5_000,
   retryStrategy: (times) => {
-    const delay = Math.min(times * 500, 5000);
+    if (times > 3) return null;
+    const delay = Math.min(times * 500, 2000);
     logger.warn(`Redis retry #${times}, next attempt in ${delay}ms`);
     return delay;
   },
 });
+
+async function pingRedis(timeoutMs = 3_000): Promise<boolean> {
+  try {
+    await Promise.race([
+      redisConnection.ping(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Redis ping timeout')), timeoutMs)
+      ),
+    ]);
+    return true;
+  } catch (err) {
+    logger.warn('Redis ping failed', { err });
+    return false;
+  }
+}
 
 redisConnection.on('connect',     () => logger.info('Redis connected'));
 redisConnection.on('error', (err) => logger.error('Redis error', { err }));
@@ -84,7 +102,11 @@ export async function dispatchScrapeJob(
 ): Promise<{ jobId: string; mode: 'queue' }> {
   const jobId = `scrape-${Date.now().toString(36)}`;
 
-  await redisConnection.ping();
+  const redisOk = await pingRedis(3_000);
+  if (!redisOk) {
+    throw new Error('Redis unavailable — check REDIS_URL or use SCRAPE_INLINE=true on the API service');
+  }
+
   const job = await scrapeQueue.add(
     'scrape-site',
     {

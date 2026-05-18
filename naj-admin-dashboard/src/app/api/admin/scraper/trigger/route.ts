@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         'x-api-key': apiKey,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(90_000),
     });
 
     const data = await res.json().catch(() => ({}));

@@ -59,14 +59,19 @@ const server = http.createServer(async (req, res) => {
         message = 'Scrape running on API server (inline mode)';
       } else {
         try {
-          const dispatched = await dispatchScrapeJob('api');
+          const dispatched = await Promise.race([
+            dispatchScrapeJob('api'),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Queue dispatch timeout')), 8_000)
+            ),
+          ]);
           jobId = dispatched.jobId;
         } catch (err) {
-          logger.warn('Redis queue unavailable — inline scrape fallback', { err });
+          logger.warn('Queue unavailable — inline scrape fallback', { err });
           jobId = startInlineScrape('api');
           mode = 'inline';
           message =
-            'Scrape running inline (start Redis + worker for queued jobs, or docker-compose up)';
+            'Scrape running inline (add REDIS_URL + worker for queued jobs, or set SCRAPE_INLINE=true)';
         }
       }
 
