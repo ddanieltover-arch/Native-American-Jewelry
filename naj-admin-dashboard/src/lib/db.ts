@@ -474,6 +474,18 @@ export async function adminDeleteCoupon(couponId: string) {
 
 export async function adminGetScrapeLogs(limit = 20) {
   const supabase = getAdminClient();
+
+  const staleBefore = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  await supabase
+    .from('scrape_logs')
+    .update({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      errors: [{ url: '', message: 'Timed out (stale running job)', stage: 'system' }],
+    })
+    .eq('status', 'running')
+    .lt('started_at', staleBefore);
+
   const { data } = await supabase
     .from('scrape_logs')
     .select('*')

@@ -81,9 +81,10 @@ export function attachAllEventLoggers() {
 // ─── Helper: dispatch a scrape job now ───────────────────
 export async function dispatchScrapeJob(
   triggeredBy: ScrapeJobData['triggeredBy'] = 'manual'
-): Promise<string> {
+): Promise<{ jobId: string; mode: 'queue' }> {
   const jobId = `scrape-${Date.now().toString(36)}`;
 
+  await redisConnection.ping();
   const job = await scrapeQueue.add(
     'scrape-site',
     {
@@ -95,8 +96,8 @@ export async function dispatchScrapeJob(
     { jobId }
   );
 
-  logger.info('Scrape job dispatched', { jobId, triggeredBy });
-  return job.id ?? jobId;
+  logger.info('Scrape job queued', { jobId, triggeredBy });
+  return { jobId: job.id ?? jobId, mode: 'queue' };
 }
 
 // ─── Helper: get queue stats ──────────────────────────────

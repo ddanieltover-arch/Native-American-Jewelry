@@ -47,16 +47,35 @@ function ErrorDetails({ log }: { log: ScrapeLog }) {
   );
 }
 
+type ScraperStatus = {
+  ok: boolean;
+  configured: boolean;
+  reachable: boolean;
+  scraperUrl?: string;
+  error?: string | null;
+};
+
 export default function ScraperPage() {
   const { data: me } = useAdminApi<AdminUser>('/api/admin/me');
   const { data: logs, loading: logsLoading, error: logsError, refetch: refetchLogs } =
     useAdminApi<ScrapeLog[]>('/api/admin/scraper/logs');
+  const { data: scraperStatus, refetch: refetchStatus } =
+    useAdminApi<ScraperStatus>('/api/admin/scraper/status');
 
   const [running, setRunning] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [sawRunningLog, setSawRunningLog] = useState(false);
 
   const canTrigger = me && ['admin', 'super_admin'].includes(me.role);
   const logList = logs ?? [];
   const hasRunningLog = logList.some((l) => l.status === 'running');
+  const pendingLog = pendingJobId
+    ? logList.find((l) => l.job_id === pendingJobId)
+    : undefined;
+
+  useEffect(() => {
+    if (hasRunningLog) setSawRunningLog(true);
+  }, [hasRunningLog]);
 
   useEffect(() => {
     if (!running && !hasRunningLog) return;
@@ -65,11 +84,32 @@ export default function ScraperPage() {
   }, [running, hasRunningLog, refetchLogs]);
 
   useEffect(() => {
-    if (running && !hasRunningLog) {
+    if (!running) return;
+
+    if (sawRunningLog && !hasRunningLog) {
       setRunning(false);
-      toast.success('Scrape finished — check approval queue for new products');
+      setPendingJobId(null);
+      setSawRunningLog(false);
+      const last = pendingLog ?? logList[0];
+      if (last?.status === 'failed') {
+        toast.error('Scrape failed — see errors in history');
+      } else {
+        toast.success('Scrape finished — check approval queue for new products');
+      }
+      return;
     }
-  }, [running, hasRunningLog]);
+
+    if (pendingJobId && pendingLog && pendingLog.status !== 'running') {
+      setRunning(false);
+      setPendingJobId(null);
+      setSawRunningLog(false);
+      if (pendingLog.status === 'failed') {
+        toast.error('Scrape failed — see errors in history');
+      } else {
+        toast.success('Scrape finished — check approval queue for new products');
+      }
+    }
+  }, [running, sawRunningLog, hasRunningLog, pendingJobId, pendingLog, logList]);
 
   useEffect(() => {
     if (logsError) toast.error(logsError);
@@ -80,15 +120,25 @@ export default function ScraperPage() {
       toast.error('You do not have permission to trigger scrapes');
       return;
     }
+    if (scraperStatus && !scraperStatus.ok) {
+      toast.error(scraperStatus.error ?? 'Scraper service is not configured');
+      return;
+    }
     setRunning(true);
     try {
       const res = await adminPost('/api/admin/scraper/trigger');
-      toast.info(
-        res.jobId
-          ? `Scrape queued (job ${res.jobId})`
-          : 'Scrape job dispatched — products will appear in the approval queue when done'
+      const jobId = res.jobId as string | undefined;
+      const mode = res.mode as string | undefined;
+      const message = res.message as string | undefined;
+      if (jobId) setPendingJobId(jobId);
+      toast.success(
+        message ??
+          (jobId
+            ? `Scrape started (${mode ?? 'queued'}) — job ${jobId}`
+            : 'Scrape started — check history below')
       );
       refetchLogs();
+      refetchStatus();
     } catch (e) {
       setRunning(false);
       toast.error(e instanceof Error ? e.message : 'Failed to trigger scrape');
@@ -152,6 +202,22 @@ export default function ScraperPage() {
         subtitle="Manage automated product scraping from hippiecowgirlcouture.com"
       />
 
+      {scraperStatus && !scraperStatus.ok && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="font-medium">Scraper service not reachable</p>
+          <p className="mt-1 text-red-700">{scraperStatus.error}</p>
+          {scraperStatus.scraperUrl && (
+            <p className="mt-2 text-xs text-red-600 font-mono">URL: {scraperStatus.scraperUrl}</p>
+          )}
+        </div>
+      )}
+
+      {scraperStatus?.ok && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-800">
+          Scraper connected{scraperStatus.scraperUrl ? ` — ${scraperStatus.scraperUrl}` : ''}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-5">
         <Card title="Manual Scrape">
           <div className="space-y-4">
@@ -185,7 +251,7 @@ export default function ScraperPage() {
               className="w-full"
               loading={running || hasRunningLog}
               onClick={triggerScrape}
-              disabled={!canTrigger || running || hasRunningLog}
+              disabled={!canTrigger || running || hasRunningLog || (scraperStatus != null && !scraperStatus.ok)}
             >
               {running || hasRunningLog ? (
                 <>

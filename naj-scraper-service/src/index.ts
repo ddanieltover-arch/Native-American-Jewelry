@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import http from 'http';
 import { dispatchScrapeJob, getQueueStats, drainQueues } from './queues';
+import { startInlineScrape } from './scrape-inline';
 import { getNextRunInfo } from './processors/scheduler';
 import { logger } from './utils/logger';
 import { config } from './config';
@@ -44,13 +45,38 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      const jobId = await dispatchScrapeJob('api');
+      let jobId: string;
+      let mode: 'queue' | 'inline' = 'queue';
+      let message = 'Scrape job queued — worker will process it';
+
+      const preferInline =
+        process.env.SCRAPE_INLINE === 'true' ||
+        (process.env.NODE_ENV !== 'production' && process.env.SCRAPE_INLINE !== 'false');
+
+      if (preferInline) {
+        jobId = startInlineScrape('api');
+        mode = 'inline';
+        message = 'Scrape running on API server (inline mode)';
+      } else {
+        try {
+          const dispatched = await dispatchScrapeJob('api');
+          jobId = dispatched.jobId;
+        } catch (err) {
+          logger.warn('Redis queue unavailable — inline scrape fallback', { err });
+          jobId = startInlineScrape('api');
+          mode = 'inline';
+          message =
+            'Scrape running inline (start Redis + worker for queued jobs, or docker-compose up)';
+        }
+      }
+
       res.writeHead(202);
-      res.end(JSON.stringify({ success: true, jobId, message: 'Scrape job queued' }));
-      logger.info('Manual scrape triggered via API', { jobId });
+      res.end(JSON.stringify({ success: true, jobId, mode, message }));
+      logger.info('Manual scrape triggered via API', { jobId, mode });
     } catch (err) {
+      logger.error('Failed to dispatch scrape', { err });
       res.writeHead(500);
-      res.end(JSON.stringify({ error: 'Failed to dispatch job' }));
+      res.end(JSON.stringify({ error: 'Failed to start scrape job' }));
     }
     return;
   }
