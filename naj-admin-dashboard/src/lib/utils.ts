@@ -7,8 +7,29 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // ─── Currency ─────────────────────────────────────────────
-export function formatPrice(amount: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+export function formatPrice(amount: number | string | null | undefined): string {
+  const n = Number(amount ?? 0);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+    Number.isFinite(n) ? n : 0
+  );
+}
+
+export function lookupLabel<T extends string>(
+  map: Record<T, string>,
+  key: string | null | undefined,
+  fallback = '—'
+): string {
+  if (!key || !(key in map)) return fallback;
+  return map[key as T];
+}
+
+export function lookupColor(
+  map: Record<string, string>,
+  key: string | null | undefined,
+  fallback = 'bg-gray-100 text-gray-600'
+): string {
+  if (!key || !(key in map)) return fallback;
+  return map[key];
 }
 
 // ─── Dates ───────────────────────────────────────────────

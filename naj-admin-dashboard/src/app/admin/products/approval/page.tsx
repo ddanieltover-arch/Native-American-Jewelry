@@ -214,7 +214,7 @@ export default function ApprovalQueuePage() {
 
                 {/* Thumbnail */}
                 <div className="w-16 h-16 rounded-lg bg-gradient-to-br from-amber-50 to-stone-100 flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-200">
-                  {product.images[0]?.url ? (
+                  {product.images?.[0]?.url ? (
                     <img src={product.images[0].url} alt={product.name} className="w-full h-full object-cover" />
                   ) : (
                     <Package size={20} className="text-gray-300" />
@@ -298,7 +298,7 @@ export default function ApprovalQueuePage() {
           <div className="space-y-5">
             {/* Image */}
             <div className="aspect-square bg-gradient-to-br from-amber-50 to-stone-100 rounded-xl flex items-center justify-center overflow-hidden border border-gray-200">
-              {selected.images[0]?.url ? (
+              {selected.images?.[0]?.url ? (
                 <img src={selected.images[0].url} alt={selected.name} className="w-full h-full object-cover" />
               ) : (
                 <Package size={40} className="text-gray-300" />

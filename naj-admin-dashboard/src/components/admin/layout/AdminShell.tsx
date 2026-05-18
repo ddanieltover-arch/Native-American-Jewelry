@@ -9,7 +9,7 @@ import {
   ChevronLeft, ChevronRight, LogOut, Search,
   AlertCircle,
 } from 'lucide-react';
-import { cn, ROLE_LABELS, ROLE_COLORS } from '@/lib/utils';
+import { cn, ROLE_LABELS, ROLE_COLORS, lookupLabel, lookupColor } from '@/lib/utils';
 import { useAdminStore } from '@/lib/store';
 import { useAdminApi } from '@/lib/use-admin-api';
 import type { AdminUser } from '@/types';
@@ -149,8 +149,8 @@ function AdminSidebar({
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-white truncate">{admin?.email ?? 'Admin'}</p>
               {admin && (
-                <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium', ROLE_COLORS[admin.role])}>
-                  {ROLE_LABELS[admin.role]}
+                <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium', lookupColor(ROLE_COLORS, admin.role))}>
+                  {lookupLabel(ROLE_LABELS, admin.role)}
                 </span>
               )}
             </div>

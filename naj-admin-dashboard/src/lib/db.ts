@@ -12,11 +12,38 @@ function getAdminClient(): SupabaseClient {
   );
 }
 
-function normalizeOrder<T extends { payment?: unknown }>(order: T): T {
-  if (Array.isArray(order.payment)) {
-    return { ...order, payment: order.payment[0] ?? null };
+function normalizeOrder<T extends { payment?: unknown; items?: unknown }>(order: T): T {
+  const normalized = { ...order } as T & { payment?: unknown; items?: unknown };
+  if (Array.isArray(normalized.payment)) {
+    normalized.payment = normalized.payment[0] ?? null;
   }
-  return order;
+  if (!Array.isArray(normalized.items)) {
+    normalized.items = [];
+  }
+  return normalized as T;
+}
+
+function normalizeProduct<T extends {
+  images?: unknown;
+  category?: unknown;
+  price?: unknown;
+  source_price?: unknown;
+  stock_quantity?: unknown;
+}>(product: T): T {
+  let images = product.images;
+  if (!Array.isArray(images)) images = images ? [images] : [];
+
+  let category = product.category;
+  if (Array.isArray(category)) category = category[0] ?? null;
+
+  return {
+    ...product,
+    images,
+    category,
+    price: Number(product.price ?? 0),
+    source_price: Number(product.source_price ?? 0),
+    stock_quantity: Number(product.stock_quantity ?? 0),
+  } as T;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -58,7 +85,12 @@ export async function adminGetProducts(filters: ProductListFilters = {}) {
   const { data, error, count } = await query;
   if (error) throw error;
 
-  return { products: data ?? [], total: count ?? 0, page, perPage };
+  return {
+    products: (data ?? []).map((p) => normalizeProduct(p)),
+    total: count ?? 0,
+    page,
+    perPage,
+  };
 }
 
 export async function adminApproveProduct(productId: string, adminId: string) {
@@ -108,7 +140,7 @@ export async function adminGetProduct(productId: string) {
     .eq('id', productId)
     .single();
   if (error) throw error;
-  return data;
+  return normalizeProduct(data);
 }
 
 export async function adminUpdateProduct(

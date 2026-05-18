@@ -105,7 +105,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         <div className="lg:col-span-2 space-y-5">
           <Card title="Items Ordered">
             <div className="divide-y divide-gray-100">
-              {order.items.map((item) => (
+              {(order.items ?? []).map((item) => (
                 <div key={item.id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
                   <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-50 to-stone-100 flex items-center justify-center flex-shrink-0 border border-gray-200">
                     <Package size={16} className="text-gray-300" />

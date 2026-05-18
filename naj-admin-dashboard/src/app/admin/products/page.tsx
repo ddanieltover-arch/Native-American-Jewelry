@@ -10,7 +10,10 @@ import {
   Pagination, SearchInput, Tabs, EmptyState,
 } from '@/components/admin/ui';
 import type { Column } from '@/components/admin/ui';
-import { formatPrice, formatDate, PRODUCT_STATUS_LABELS, PRODUCT_STATUS_COLORS, cn } from '@/lib/utils';
+import {
+  formatPrice, formatDate, PRODUCT_STATUS_LABELS, PRODUCT_STATUS_COLORS,
+  lookupLabel, lookupColor, cn,
+} from '@/lib/utils';
 import { adminPost } from '@/lib/use-admin-api';
 import type { AdminProduct, ProductStatus } from '@/types';
 
@@ -134,7 +137,7 @@ export default function ProductsPage() {
       render: (p) => (
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-50 to-stone-100 flex-shrink-0 flex items-center justify-center border border-gray-100 overflow-hidden">
-            {p.images[0]?.url
+            {p.images?.[0]?.url
               ? <img src={p.images[0].url} alt={p.name} className="w-full h-full object-cover" />
               : <Package size={14} className="text-gray-300" />}
           </div>
@@ -147,7 +150,11 @@ export default function ProductsPage() {
     },
     {
       key: 'status', label: 'Status',
-      render: (p) => <Badge className={PRODUCT_STATUS_COLORS[p.status]}>{PRODUCT_STATUS_LABELS[p.status]}</Badge>,
+      render: (p) => (
+        <Badge className={lookupColor(PRODUCT_STATUS_COLORS, p.status)}>
+          {lookupLabel(PRODUCT_STATUS_LABELS, p.status)}
+        </Badge>
+      ),
     },
     {
       key: 'price', label: 'Price', sortable: true,
@@ -161,8 +168,8 @@ export default function ProductsPage() {
     {
       key: 'stock_quantity', label: 'Stock',
       render: (p) => (
-        <span className={cn('text-sm', p.stock_quantity <= 2 ? 'text-red-500 font-medium' : 'text-gray-700')}>
-          {p.in_stock ? p.stock_quantity : 'Out of Stock'}
+        <span className={cn('text-sm', (p.stock_quantity ?? 0) <= 2 ? 'text-red-500 font-medium' : 'text-gray-700')}>
+          {p.in_stock ? (p.stock_quantity ?? 0) : 'Out of Stock'}
         </span>
       ),
     },

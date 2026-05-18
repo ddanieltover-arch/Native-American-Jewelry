@@ -11,7 +11,7 @@ import {
 import type { Column } from '@/components/admin/ui';
 import {
   formatPrice, formatDateTime, ORDER_STATUS_LABELS,
-  ORDER_STATUS_COLORS, PAYMENT_METHOD_LABELS, cn,
+  ORDER_STATUS_COLORS, PAYMENT_METHOD_LABELS, lookupLabel, lookupColor, cn,
 } from '@/lib/utils';
 import type { AdminOrder } from '@/types';
 
@@ -53,12 +53,16 @@ const COLUMNS: Column<AdminOrder>[] = [
   },
   {
     key: 'status', label: 'Status', sortable: true,
-    render: (o) => <Badge className={ORDER_STATUS_COLORS[o.status]}>{ORDER_STATUS_LABELS[o.status]}</Badge>,
+    render: (o) => (
+      <Badge className={lookupColor(ORDER_STATUS_COLORS, o.status)}>
+        {lookupLabel(ORDER_STATUS_LABELS, o.status)}
+      </Badge>
+    ),
   },
   {
     key: 'payment', label: 'Payment',
     render: (o) => o.payment ? (
-      <span className="text-xs text-gray-600">{PAYMENT_METHOD_LABELS[o.payment.method]}</span>
+      <span className="text-xs text-gray-600">{lookupLabel(PAYMENT_METHOD_LABELS, o.payment.method, '—')}</span>
     ) : <span className="text-gray-300 text-xs">—</span>,
   },
   {
