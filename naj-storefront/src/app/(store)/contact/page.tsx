@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import Logo from '@/components/brand/Logo';
 
 export default function ContactPage() {
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
@@ -44,9 +43,6 @@ export default function ContactPage() {
 
   return (
     <div className="max-w-lg mx-auto px-4 md:px-8 py-16">
-      <div className="flex justify-center mb-8">
-        <Logo height={64} href="/" />
-      </div>
       <h1 className="text-heading-xl text-brand-obsidian mb-2 text-center" style={{ fontFamily: 'var(--font-display)' }}>
         Contact Us
       </h1>

@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload } from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase-client';
-import { formatPrice, ORDER_STATUS_LABELS } from '@/lib/utils';
+import { formatPrice, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/lib/utils';
+import type { PaymentMethod } from '@/types';
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const [order, setOrder] = useState<Record<string, unknown> | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -22,29 +21,15 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       .then(({ data }) => setOrder(data as Record<string, unknown>));
   }, [id]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const form = new FormData();
-    form.append('proof', file);
-    try {
-      const res = await fetch(`/api/orders/${id}/proof`, { method: 'POST', body: form });
-      if (!res.ok) throw new Error('Upload failed');
-      toast.success('Payment proof uploaded');
-    } catch {
-      toast.error('Could not upload proof');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   if (!order) {
     return <div className="p-10 text-center text-brand-sienna">Loading order…</div>;
   }
 
   const payment = Array.isArray(order.payment) ? order.payment[0] : order.payment;
   const items = (order.items as { product_name: string; quantity: number; subtotal: number }[]) ?? [];
+  const paymentMethod = payment
+    ? PAYMENT_METHOD_LABELS[(payment as { method: PaymentMethod }).method]
+    : null;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -70,12 +55,24 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       <p className="font-medium mb-6">Total: {formatPrice(order.total as number)}</p>
 
       {payment && (payment as { status: string }).status === 'pending' && (
-        <label className="btn-primary text-sm inline-flex items-center gap-2 cursor-pointer">
-          <Upload size={14} />
-          {uploading ? 'Uploading…' : 'Upload payment proof'}
-          <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
-        </label>
+        <div className="bg-brand-bone border border-brand-sand/30 p-4 text-sm text-brand-sienna" style={{ fontFamily: 'var(--font-body)' }}>
+          <p className="font-medium text-brand-obsidian mb-2">Payment</p>
+          <p className="mb-2">
+            Your order is confirmed{paymentMethod ? ` (${paymentMethod})` : ''}. Our team will contact you as soon as
+            possible with secure payment instructions.
+          </p>
+          <p className="text-xs">Please wait for our message before sending payment.</p>
+        </div>
       )}
+
+      <div className="flex flex-wrap gap-3 mt-6">
+        <Link href="/shop" className="btn-primary text-sm">
+          Continue shopping
+        </Link>
+        <Link href="/contact" className="btn-ghost text-sm">
+          Contact us
+        </Link>
+      </div>
     </div>
   );
 }

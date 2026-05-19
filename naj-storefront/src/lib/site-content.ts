@@ -53,8 +53,8 @@ export const SITE_CONTENT: Record<ContentSlug, PageContent> = {
       {
         heading: '3. Checkout & payment',
         body: [
-          'Enter your shipping address and choose your preferred payment method. We accept Chime, CashApp, Apple Cash, Zelle, and bank transfer. After you place your order, you will receive an email with exact payment instructions.',
-          'Your order is held while we verify payment — typically within one business day. Once confirmed, we prepare your piece for shipment.',
+          'Enter your shipping address and choose your preferred payment method. We accept Chime, CashApp, Apple Cash, Zelle, and bank transfer. Your order is confirmed immediately when you place it.',
+          'A member of our team will contact you as soon as possible with secure payment instructions. Please wait for our message before sending payment. Once we receive your payment, we prepare your piece for shipment.',
         ],
       },
       {
@@ -80,33 +80,34 @@ export const SITE_CONTENT: Record<ContentSlug, PageContent> = {
   'payment-methods': {
     title: 'Payment Methods',
     description:
-      'Pay securely with Chime, CashApp, Apple Cash, Zelle, or bank transfer. Payment instructions are sent after checkout.',
+      'Pay securely with Chime, CashApp, Apple Cash, Zelle, or bank transfer. Our team contacts you with payment details after checkout.',
     subtitle:
-      'We use trusted peer-to-peer and bank payment methods for a secure, personal checkout experience. Full instructions are emailed immediately after you place your order.',
+      'We use trusted peer-to-peer and bank payment methods for a secure, personal checkout experience. Your order is confirmed immediately — our team reaches out as soon as possible with payment instructions.',
     sections: [
       {
         heading: 'Accepted methods',
         list: [
-          'Chime — Send to our Chime handle listed in your order confirmation email.',
-          'CashApp — Pay using the $Cashtag provided in your confirmation.',
-          'Apple Cash — Send via the phone number in your payment instructions.',
-          'Zelle — Send to our Zelle-registered email; include your order number in the memo.',
-          'Bank transfer — ACH/wire details provided for larger orders upon request.',
+          'Chime',
+          'Cash App',
+          'Apple Cash',
+          'Zelle',
+          'Bank transfer / ACH',
         ],
         body: [],
       },
       {
-        heading: 'How payment verification works',
+        heading: 'How payment works',
         body: [
-          'After checkout, you will receive an order confirmation with the exact amount and payment details. Send payment using your chosen method and include your order number in the memo or note field.',
-          'Our team verifies payments manually, usually within one business day (Monday–Friday, excluding holidays). You will receive an email when your payment is confirmed and your order moves into fulfillment.',
+          'When you place your order, it is confirmed immediately. Select your preferred method at checkout.',
+          'A member of our team will contact you as soon as possible with secure payment instructions for your order total. Please wait for our message before sending payment.',
+          'Once we receive your payment, we prepare your order for shipment and send you updates by email.',
         ],
       },
       {
         heading: 'Important notes',
         body: [
-          'Orders are not shipped until payment is verified. If we cannot match your payment to your order within 48 hours, we may contact you or cancel the order.',
-          'Please send the exact order total shown in your confirmation. Overpayments can be applied as store credit; contact us for underpayments.',
+          'Orders are prepared for shipment after we receive and confirm your payment.',
+          'If you have questions before paying, contact us — we are happy to help.',
         ],
       },
     ],
@@ -227,7 +228,7 @@ export const SITE_CONTENT: Record<ContentSlug, PageContent> = {
         heading: 'Ordering & payment',
         list: [
           'How do I place an order? — Browse the shop, add items to your cart, and complete checkout. See How to Order for details.',
-          'When is my order confirmed? — After we verify your payment, usually within one business day.',
+          'When is my order confirmed? — Immediately when you place it. Our team then contacts you with payment instructions.',
           'Can I change or cancel my order? — Contact us within 30 minutes of placing it. After that, cancellation depends on fulfillment status.',
           'Do you offer layaway? — We do not currently offer traditional layaway. See our Layaway Policy for details.',
         ],

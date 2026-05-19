@@ -65,3 +65,14 @@ export async function adminPatch(url: string, body: unknown) {
   );
   return json;
 }
+
+export async function adminDelete(url: string) {
+  const json = await parseJson(
+    await fetch(url, {
+      method: 'DELETE',
+      ...fetchOpts,
+      headers: getAuthHeaders(),
+    })
+  );
+  return json;
+}

@@ -1,3 +1,5 @@
+import { siteUrl } from '../brand';
+import { emailCustomerCtas } from '../email-ctas';
 import { emailLayout } from '../layout';
 import { escapeHtml } from '../utils';
 
@@ -43,12 +45,15 @@ export function renderContactConfirmationEmail(data: { name: string }): {
   text: string;
 } {
   const name = escapeHtml(data.name || 'there');
+  const base = siteUrl();
+
   const bodyHtml = `
     <h2 style="margin:0 0 16px;font-size:20px;font-weight:400;color:#0e0c0a;">We received your message</h2>
     <p style="margin:0 0 16px;font-size:15px;line-height:1.65;font-family:Arial,sans-serif;">
       Hi ${name}, thank you for reaching out to Native American Jewelry. We received your message and will respond within 1–2 business days.
     </p>
-    <p style="margin:0;font-size:13px;color:#8b5e3c;font-family:Arial,sans-serif;">This is an automated confirmation.</p>
+    ${emailCustomerCtas({ baseUrl: base, includeAccount: false })}
+    <p style="margin:16px 0 0;font-size:13px;color:#8b5e3c;font-family:Arial,sans-serif;">This is an automated confirmation.</p>
   `;
 
   return {

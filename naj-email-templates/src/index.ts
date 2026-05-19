@@ -1,12 +1,14 @@
 export { BRAND, siteUrl, logoUrl } from './brand';
-export { getAdminEmail } from './admin';
+export { getAdminEmail, getAdminSiteUrl } from './admin';
 export { escapeHtml, formatUsd } from './utils';
 export { emailLayout, emailButton, infoBox } from './layout';
 export {
-  getPaymentInstructions,
   paymentMethodLabel,
+  renderPaymentFollowUpHtml,
+  renderPaymentFollowUpText,
   renderPaymentInstructionsHtml,
 } from './payment-details';
+export { emailCustomerCtas } from './email-ctas';
 export { renderOrderConfirmationEmail } from './templates/order-confirmation';
 export { renderPaymentInstructionsEmail } from './templates/payment-instructions';
 export { renderPaymentStatusEmail } from './templates/payment-status';

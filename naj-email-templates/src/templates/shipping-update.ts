@@ -1,4 +1,5 @@
 import { siteUrl } from '../brand';
+import { emailCustomerCtas } from '../email-ctas';
 import { emailButton, emailLayout, infoBox } from '../layout';
 import type { ShippingUpdateEmailData } from '../types';
 import { escapeHtml } from '../utils';
@@ -9,7 +10,6 @@ export function renderShippingUpdateEmail(data: ShippingUpdateEmailData): {
   text: string;
 } {
   const base = data.siteUrl ?? siteUrl();
-  const accountUrl = `${base}/account`;
 
   const isDelivered = data.status === 'delivered';
 
@@ -62,7 +62,7 @@ export function renderShippingUpdateEmail(data: ShippingUpdateEmailData): {
     </p>
     ${detailsHtml}
     ${trackingBtn}
-    ${emailButton(accountUrl, 'View order history')}
+    ${emailCustomerCtas({ baseUrl: base })}
   `;
 
   const html = emailLayout({

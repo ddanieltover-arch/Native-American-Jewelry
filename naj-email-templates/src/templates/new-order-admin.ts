@@ -1,4 +1,4 @@
-import { siteUrl } from '../brand';
+import { getAdminSiteUrl } from '../admin';
 import { emailButton, emailLayout } from '../layout';
 import { paymentMethodLabel } from '../payment-details';
 import type { OrderLineItem, PaymentMethod } from '../types';
@@ -24,8 +24,9 @@ export function renderNewOrderAdminEmail(data: NewOrderAdminEmailData): {
   html: string;
   text: string;
 } {
-  const adminBase = process.env.ADMIN_SITE_URL ?? process.env.NEXT_PUBLIC_ADMIN_URL ?? siteUrl();
-  const orderUrl = `${adminBase.replace(/\/$/, '')}/admin/orders/${data.orderId}`;
+  const adminBase = getAdminSiteUrl();
+  const orderUrl = `${adminBase}/admin/orders/${data.orderId}`;
+  const ordersListUrl = `${adminBase}/admin/orders`;
 
   const itemRows = data.items
     .map(
@@ -47,6 +48,8 @@ export function renderNewOrderAdminEmail(data: NewOrderAdminEmailData): {
     </p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${itemRows}</table>
     ${emailButton(orderUrl, 'View order in admin')}
+    ${emailButton(ordersListUrl, 'All orders in admin')}
+    ${emailButton(`mailto:${escapeHtml(data.customerEmail)}`, 'Email customer')}
   `;
 
   return {

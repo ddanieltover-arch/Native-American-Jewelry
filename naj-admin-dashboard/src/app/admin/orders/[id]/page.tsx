@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   CheckCircle,
@@ -13,6 +14,7 @@ import {
   Save,
   User,
   Copy,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge, Button, Card, ConfirmModal, Select, Textarea, Input } from '@/components/admin/ui';
@@ -29,7 +31,7 @@ import {
   getOrderContact,
   formatShippingAddress,
 } from '@/lib/utils';
-import { adminPatch, adminPost, useAdminApi } from '@/lib/use-admin-api';
+import { adminDelete, adminPatch, adminPost, useAdminApi } from '@/lib/use-admin-api';
 import type { AdminOrder, OrderStatus, PaymentStatus } from '@/types';
 
 const ORDER_STATUS_OPTIONS = [
@@ -92,12 +94,14 @@ function CopyableId({ label, value }: { label: string; value: string }) {
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
+  const router = useRouter();
   const { data: order, loading, error, refetch } = useAdminApi<AdminOrder>(`/api/admin/orders/${id}`);
 
   const [notes, setNotes] = useState('');
   const [shippingMethod, setShippingMethod] = useState('');
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [confirmRefund, setConfirmRefund] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (!order) return;
@@ -115,6 +119,20 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       toast.error(e instanceof Error ? e.message : 'Update failed');
     } finally {
       setLoadingAction(null);
+    }
+  };
+
+  const deleteOrder = async () => {
+    setLoadingAction('delete');
+    try {
+      await adminDelete(`/api/admin/orders/${id}`);
+      toast.success('Order deleted');
+      router.push('/admin/orders');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete order');
+    } finally {
+      setLoadingAction(null);
+      setConfirmDelete(false);
     }
   };
 
@@ -414,6 +432,20 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
               <RotateCcw size={13} /> Process refund
             </Button>
           )}
+
+          <Card title="Danger zone">
+            <p className="text-xs text-gray-500 mb-3">
+              Permanently remove this order, line items, and payment records. This cannot be undone.
+            </p>
+            <Button
+              variant="danger"
+              size="sm"
+              className="w-full"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 size={13} /> Delete order
+            </Button>
+          </Card>
         </div>
       </div>
 
@@ -428,6 +460,16 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           setConfirmRefund(false);
         }}
         onCancel={() => setConfirmRefund(false)}
+      />
+
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete order"
+        message={`Permanently delete order ${order.order_number}? All line items and payment data will be removed.`}
+        confirmLabel="Delete order"
+        loading={loadingAction === 'delete'}
+        onConfirm={deleteOrder}
+        onCancel={() => setConfirmDelete(false)}
       />
     </div>
   );

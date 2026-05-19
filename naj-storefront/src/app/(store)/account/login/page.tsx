@@ -63,7 +63,7 @@ function LoginForm() {
   return (
     <AuthShell
       title="Sign in"
-      subtitle="Access your orders, wishlist, and payment uploads."
+      subtitle="Access your orders and wishlist."
       footer={
         <p className="text-sm text-brand-sienna mt-6 text-center space-y-2">
           <span className="block">

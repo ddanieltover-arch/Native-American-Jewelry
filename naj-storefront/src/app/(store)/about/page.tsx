@@ -49,8 +49,8 @@ export default function AboutPage() {
             worldwide.
           </p>
           <p>
-            Our checkout uses secure manual payment methods — Chime, CashApp, Apple Cash, Zelle, and
-            bank transfer — with personal verification before your order ships.
+            Our checkout uses Chime, CashApp, Apple Cash, Zelle, and bank transfer. Your order is
+            confirmed immediately; our team contacts you as soon as possible with payment instructions.
           </p>
         </div>
 

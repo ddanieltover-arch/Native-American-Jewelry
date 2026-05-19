@@ -317,6 +317,23 @@ export async function adminUpdateOrderStatus(
   return adminUpdateOrder(orderId, { status }, adminId);
 }
 
+export async function adminDeleteOrder(orderId: string) {
+  const supabase = getAdminClient();
+
+  try {
+    const { data: files } = await supabase.storage.from('payment-proofs').list(orderId);
+    if (files?.length) {
+      const paths = files.map((f) => `${orderId}/${f.name}`);
+      await supabase.storage.from('payment-proofs').remove(paths);
+    }
+  } catch {
+    /* storage cleanup is best-effort */
+  }
+
+  const { error } = await supabase.from('orders').delete().eq('id', orderId);
+  if (error) throw error;
+}
+
 // ══════════════════════════════════════════════════════════
 // PAYMENTS
 // ══════════════════════════════════════════════════════════

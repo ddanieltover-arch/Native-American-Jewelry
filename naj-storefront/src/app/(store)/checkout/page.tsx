@@ -6,7 +6,6 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCartStore } from '@/lib/store';
 import { createClient } from '@/lib/supabase-client';
-import Logo from '@/components/brand/Logo';
 import { cn, formatPrice, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS } from '@/lib/utils';
 import {
   FREE_SHIPPING_ANNOUNCEMENT,
@@ -27,13 +26,11 @@ const STEP_LABELS: Record<Step, string> = {
 
 const PAYMENT_METHODS: PaymentMethod[] = ['chime', 'cashapp', 'apple_cash', 'zelle', 'bank_transfer'];
 
-const PAYMENT_INSTRUCTIONS: Record<PaymentMethod, string> = {
-  chime:         'Send payment to our Chime account. Details will be emailed to you after placing your order.',
-  cashapp:       'Send to our Cash App $cashtag. Include your order number in the note.',
-  apple_cash:    'Send via iMessage to our Apple Cash account. We will provide the number via email.',
-  zelle:         'Send to our Zelle-registered email. Include your order number.',
-  bank_transfer: 'Bank routing and account details will be sent to your email immediately after checkout.',
-};
+/** Same message pattern for every method — agent follow-up, no payment details in checkout. */
+function paymentMethodNote(method: PaymentMethod): string {
+  const label = PAYMENT_METHOD_LABELS[method];
+  return `Your order is confirmed immediately. Our team will contact you as soon as possible with secure ${label} payment instructions. Please wait for our message before sending payment.`;
+}
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCartStore();
@@ -112,6 +109,10 @@ export default function CheckoutPage() {
   const orderTotal = subtotal + shippingCost - discount;
 
   const stepIndex = STEPS.indexOf(step);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
 
   const applyCoupon = async () => {
     if (!coupon.trim()) return;
@@ -392,8 +393,22 @@ export default function CheckoutPage() {
               </h2>
 
               <div className="bg-brand-bone border border-brand-sand/30 p-4 text-sm text-brand-sienna" style={{ fontFamily: 'var(--font-body)' }}>
-                <p className="font-medium text-brand-obsidian mb-1">How manual payment works:</p>
-                <p>Select your preferred method below. After placing your order, you'll receive an email with exact payment instructions. Once you've sent the payment, upload a screenshot as proof from your account. We'll confirm and start fulfillment within 24–48 hours.</p>
+                <p className="font-medium text-brand-obsidian mb-2">How payment works</p>
+                <ul className="space-y-2 list-disc pl-5 leading-relaxed">
+                  <li>
+                    Your order is <strong className="text-brand-obsidian font-medium">confirmed immediately</strong>{' '}
+                    when you place it.
+                  </li>
+                  <li>
+                    Select your preferred method below (Chime, Cash App, Apple Cash, Zelle, or bank transfer).
+                  </li>
+                  <li>
+                    A member of our team will contact you{' '}
+                    <strong className="text-brand-obsidian font-medium">as soon as possible</strong> with secure
+                    payment instructions.
+                  </li>
+                  <li>Please wait for our message before sending payment.</li>
+                </ul>
               </div>
 
               <div className="space-y-3">
@@ -424,7 +439,7 @@ export default function CheckoutPage() {
                       </div>
                       {paymentMethod === method && (
                         <p className="text-xs text-brand-sienna mt-1 leading-relaxed" style={{ fontFamily: 'var(--font-body)' }}>
-                          {PAYMENT_INSTRUCTIONS[method]}
+                          {paymentMethodNote(method)}
                         </p>
                       )}
                     </div>
@@ -459,9 +474,6 @@ export default function CheckoutPage() {
           {/* Confirmation */}
           {step === 'confirmation' && (
             <div className="text-center py-12">
-              <div className="flex justify-center mb-6">
-                <Logo height={72} href="/" />
-              </div>
               <div className="w-16 h-16 rounded-full bg-brand-turquoise/15 border border-brand-turquoise/30 flex items-center justify-center mx-auto mb-6">
                 <Check size={28} className="text-brand-turquoise" />
               </div>
@@ -475,9 +487,10 @@ export default function CheckoutPage() {
                 Order <span className="font-medium text-brand-obsidian">{orderNumber}</span>
               </p>
               <p className="text-sm text-brand-sienna max-w-md mx-auto mb-8 leading-relaxed" style={{ fontFamily: 'var(--font-body)' }}>
-                A confirmation email with {PAYMENT_METHOD_LABELS[paymentMethod]} payment instructions has been sent to{' '}
+                Your order is confirmed. A confirmation email has been sent to{' '}
                 <strong className="text-brand-obsidian">{form.email}</strong>.
-                Please complete payment within 48 hours to secure your order.
+                Our team will contact you as soon as possible with {PAYMENT_METHOD_LABELS[paymentMethod]} payment
+                instructions. Please wait for our message before sending payment.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Link href="/account/orders" className="btn-ghost text-sm">View My Orders</Link>

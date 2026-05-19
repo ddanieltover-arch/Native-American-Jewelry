@@ -1,6 +1,7 @@
 import { siteUrl } from '../brand';
-import { emailButton, emailLayout, infoBox } from '../layout';
-import { paymentMethodLabel, renderPaymentInstructionsHtml } from '../payment-details';
+import { emailCustomerCtas } from '../email-ctas';
+import { emailLayout, infoBox } from '../layout';
+import { paymentMethodLabel, renderPaymentFollowUpHtml, renderPaymentFollowUpText } from '../payment-details';
 import type { OrderConfirmationEmailData } from '../types';
 import { escapeHtml, formatUsd } from '../utils';
 
@@ -10,7 +11,6 @@ export function renderOrderConfirmationEmail(data: OrderConfirmationEmailData): 
   text: string;
 } {
   const base = data.siteUrl ?? siteUrl();
-  const proofUrl = `${base}/account/orders/${data.orderId}`;
   const name = escapeHtml(data.customerName || 'there');
   const orderNum = escapeHtml(data.orderNumber);
 
@@ -43,7 +43,7 @@ export function renderOrderConfirmationEmail(data: OrderConfirmationEmailData): 
           <td align="right" style="font-size:15px;font-weight:600;font-family:Arial,sans-serif;padding-top:12px;">${formatUsd(data.total)}</td></tr>
     </table>`;
 
-  const paymentHtml = renderPaymentInstructionsHtml(
+  const paymentHtml = renderPaymentFollowUpHtml(
     data.paymentMethod,
     data.orderNumber,
     data.total
@@ -57,8 +57,8 @@ export function renderOrderConfirmationEmail(data: OrderConfirmationEmailData): 
       Thank you, ${name}
     </h2>
     <p style="margin:0 0 20px;font-size:15px;line-height:1.65;font-family:Arial,sans-serif;">
-      We received your order <strong>#${orderNum}</strong>. Complete payment via
-      <strong>${escapeHtml(paymentMethodLabel(data.paymentMethod))}</strong> to begin processing.
+      Your order <strong>#${orderNum}</strong> is confirmed. We received your request for
+      <strong>${escapeHtml(paymentMethodLabel(data.paymentMethod))}</strong> and our team will follow up shortly.
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
@@ -74,15 +74,11 @@ export function renderOrderConfirmationEmail(data: OrderConfirmationEmailData): 
 
     ${infoBox(paymentHtml)}
 
-    <p style="margin:16px 0 0;font-size:14px;line-height:1.6;font-family:Arial,sans-serif;">
-      After sending payment, upload a screenshot from your account so we can verify within 24–48 hours.
-    </p>
-    ${emailButton(proofUrl, 'Upload payment proof')}
-    ${emailButton(`${base}/account`, 'View my account')}
+    ${emailCustomerCtas({ baseUrl: base, orderId: data.orderId })}
   `;
 
   const html = emailLayout({
-    preheader: `Order ${data.orderNumber} confirmed — ${formatUsd(data.total)} due`,
+    preheader: `Order ${data.orderNumber} confirmed — our team will contact you with payment details`,
     title: `Order confirmed — ${data.orderNumber}`,
     bodyHtml,
   });
@@ -91,8 +87,8 @@ export function renderOrderConfirmationEmail(data: OrderConfirmationEmailData): 
     `Thank you, ${data.customerName}!`,
     `Order #${data.orderNumber} is confirmed.`,
     `Total: ${formatUsd(data.total)}`,
-    `Payment: ${paymentMethodLabel(data.paymentMethod)}`,
-    `Upload proof: ${proofUrl}`,
+    renderPaymentFollowUpText(data.paymentMethod, data.orderNumber, data.total),
+    `${base}/account/orders/${data.orderId}`,
   ].join('\n');
 
   return {

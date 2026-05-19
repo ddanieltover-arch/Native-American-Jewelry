@@ -1,5 +1,6 @@
 import { siteUrl } from '../brand';
-import { emailButton, emailLayout, infoBox } from '../layout';
+import { emailCustomerCtas } from '../email-ctas';
+import { emailLayout, infoBox } from '../layout';
 import type { PaymentStatusEmailData } from '../types';
 import { escapeHtml, formatUsd } from '../utils';
 
@@ -9,22 +10,21 @@ export function renderPaymentStatusEmail(data: PaymentStatusEmailData): {
   text: string;
 } {
   const base = data.siteUrl ?? siteUrl();
-  const accountUrl = `${base}/account`;
 
   const configs = {
     confirmed: {
-      headline: 'Payment confirmed',
+      headline: 'Payment received',
       message:
-        'We verified your payment. Your order is now being prepared for shipment.',
-      subject: `Payment confirmed — ${data.orderNumber}`,
-      preheader: 'Your payment was verified — we are processing your order',
+        'We received your payment and your order is now being prepared for shipment.',
+      subject: `Payment received — ${data.orderNumber}`,
+      preheader: 'Your payment was received — we are processing your order',
     },
     failed: {
-      headline: 'Payment could not be verified',
+      headline: 'Payment follow-up needed',
       message:
-        'We could not verify your payment. Please contact us or try uploading proof again from your account.',
-      subject: `Payment issue — ${data.orderNumber}`,
-      preheader: 'Action needed on your order payment',
+        'We need to connect with you about payment for this order. Please contact us and our team will assist you right away.',
+      subject: `Payment follow-up — ${data.orderNumber}`,
+      preheader: 'Please contact us about your order payment',
     },
     refunded: {
       headline: 'Refund processed',
@@ -58,7 +58,7 @@ export function renderPaymentStatusEmail(data: PaymentStatusEmailData): {
         : ''
     }
     ${noteBlock}
-    ${emailButton(accountUrl, 'View my orders')}
+    ${emailCustomerCtas({ baseUrl: base })}
   `;
 
   const html = emailLayout({

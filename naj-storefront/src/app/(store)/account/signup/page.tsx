@@ -76,7 +76,7 @@ function SignupForm() {
   return (
     <AuthShell
       title="Create account"
-      subtitle="Track orders, save your wishlist, and upload payment proof."
+      subtitle="Track orders, save your wishlist, and manage your account."
       footer={
         <p className="text-sm text-brand-sienna mt-6 text-center">
           Already have an account?{' '}
