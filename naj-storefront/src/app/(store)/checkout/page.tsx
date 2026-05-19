@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,7 +8,11 @@ import { useCartStore } from '@/lib/store';
 import { createClient } from '@/lib/supabase-client';
 import Logo from '@/components/brand/Logo';
 import { cn, formatPrice, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS } from '@/lib/utils';
-import { FREE_SHIPPING_ANNOUNCEMENT, FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
+import {
+  FREE_SHIPPING_ANNOUNCEMENT,
+  FREE_SHIPPING_THRESHOLD_US,
+  qualifiesForFreeStandardShipping,
+} from '@/lib/shipping-constants';
 import type { PaymentMethod, ShippingRate } from '@/types';
 
 type Step = 'information' | 'shipping' | 'payment' | 'confirmation';
@@ -50,15 +54,34 @@ export default function CheckoutPage() {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    fetch('/api/shipping?zone=usa')
+    fetch('/api/shipping')
       .then((r) => r.json())
       .then((d) => {
-        const rates = (d.data ?? []) as ShippingRate[];
-        setShippingRates(rates);
-        if (rates[0]) setShippingRateId(rates[0].id);
+        setShippingRates((d.data ?? []) as ShippingRate[]);
       })
       .catch(() => {});
   }, []);
+
+  const isUsAddress = form.country === 'US';
+  const shippingZone: 'usa' | 'international' = isUsAddress ? 'usa' : 'international';
+
+  const visibleShippingRates = useMemo(
+    () => shippingRates.filter((r) => r.zone === shippingZone),
+    [shippingRates, shippingZone]
+  );
+
+  const selectDefaultShippingForZone = (zone: 'usa' | 'international') => {
+    const forZone = shippingRates.filter((r) => r.zone === zone);
+    setShippingRateId(forZone[0]?.id ?? '');
+  };
+
+  useEffect(() => {
+    setShippingRateId((current) => {
+      if (visibleShippingRates.length === 0) return '';
+      if (visibleShippingRates.some((r) => r.id === current)) return current;
+      return visibleShippingRates[0].id;
+    });
+  }, [visibleShippingRates]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -80,9 +103,9 @@ export default function CheckoutPage() {
   }, []);
 
   const subtotal = total();
-  const selectedRate = shippingRates.find((r) => r.id === shippingRateId);
+  const selectedRate = visibleShippingRates.find((r) => r.id === shippingRateId);
   const shippingCost =
-    selectedRate && selectedRate.free_threshold && subtotal >= selectedRate.free_threshold
+    selectedRate && qualifiesForFreeStandardShipping(selectedRate, subtotal)
       ? 0
       : (selectedRate?.rate ?? 0);
   const discount = discountAmount;
@@ -258,7 +281,15 @@ export default function CheckoutPage() {
 
               <Field label="Country *">
                 <div className="relative">
-                  <select className="input-base appearance-none pr-8" value={form.country} onChange={e => setForm({...form, country: e.target.value})}>
+                  <select
+                    className="input-base appearance-none pr-8"
+                    value={form.country}
+                    onChange={(e) => {
+                      const country = e.target.value;
+                      setForm({ ...form, country });
+                      selectDefaultShippingForZone(country === 'US' ? 'usa' : 'international');
+                    }}
+                  >
                     <option value="US">United States</option>
                     <option value="CA">Canada</option>
                     <option value="GB">United Kingdom</option>
@@ -289,14 +320,19 @@ export default function CheckoutPage() {
                 Shipping Method
               </h2>
               <p className="text-xs text-brand-sienna" style={{ fontFamily: 'var(--font-body)' }}>
-                {FREE_SHIPPING_ANNOUNCEMENT} on standard US delivery.
+                {isUsAddress
+                  ? `${FREE_SHIPPING_ANNOUNCEMENT} on standard US delivery.`
+                  : 'International orders ship via standard or express delivery. Rates are calculated below.'}
               </p>
 
               <div className="space-y-3">
-                {shippingRates.filter(r =>
-                  form.country === 'US' ? r.zone === 'usa' : r.zone === 'international'
-                ).map((rate) => {
-                  const isFree = rate.free_threshold && subtotal >= rate.free_threshold;
+                {visibleShippingRates.length === 0 ? (
+                  <p className="text-sm text-brand-sienna py-4" style={{ fontFamily: 'var(--font-body)' }}>
+                    Shipping options are loading… If this persists, please contact us to complete your order.
+                  </p>
+                ) : null}
+                {visibleShippingRates.map((rate) => {
+                  const isFree = qualifiesForFreeStandardShipping(rate, subtotal);
                   return (
                     <label
                       key={rate.id}
@@ -337,7 +373,11 @@ export default function CheckoutPage() {
                 <button onClick={() => setStep('information')} className="btn-ghost flex-1 text-sm flex items-center justify-center gap-2">
                   <ArrowLeft size={14} /> Back
                 </button>
-                <button onClick={() => setStep('payment')} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setStep('payment')}
+                  disabled={!shippingRateId || visibleShippingRates.length === 0}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
                   Continue to Payment <ArrowRight size={16} />
                 </button>
               </div>

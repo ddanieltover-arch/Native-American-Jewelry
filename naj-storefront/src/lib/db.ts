@@ -3,6 +3,7 @@
 // Drop these into naj-storefront/src/lib/db.ts
 // ═══════════════════════════════════════════════════════════
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { qualifiesForFreeStandardShipping } from '@/lib/shipping-constants';
 
 // Untyped client — Database generic requires generated Relationships; use explicit casts at call sites
 function getClient(): SupabaseClient {
@@ -286,8 +287,9 @@ export async function createOrder(payload: CreateOrderPayload) {
 
   // Calculate totals
   const subtotal = payload.items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-  const freeShipping = shippingRate.free_threshold && subtotal >= shippingRate.free_threshold;
-  const shippingCost = freeShipping ? 0 : shippingRate.rate;
+  const shippingCost = qualifiesForFreeStandardShipping(shippingRate, subtotal)
+    ? 0
+    : shippingRate.rate;
 
   // Apply coupon
   let discountAmount = 0;
