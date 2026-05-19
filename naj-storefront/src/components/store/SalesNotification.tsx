@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { X } from 'lucide-react';
 import { cn, USA_STATES, randomBetween } from '@/lib/utils';
 import type { Product } from '@/types';
@@ -9,6 +10,7 @@ interface Notification {
   id: string;
   state: string;
   productName: string;
+  productSlug: string;
 }
 
 export default function SalesNotification() {
@@ -32,6 +34,7 @@ export default function SalesNotification() {
       id: Math.random().toString(36).slice(2),
       state,
       productName: product.name,
+      productSlug: product.slug,
     });
     setVisible(true);
     setTimeout(() => setVisible(false), 5000);
@@ -61,14 +64,24 @@ export default function SalesNotification() {
       aria-live="polite"
     >
       <div className="bg-white border border-brand-sand/40 shadow-lg p-3 flex items-start gap-3">
-        <div className="w-2 h-2 rounded-full bg-brand-turquoise mt-1.5 flex-shrink-0 animate-pulse" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-brand-obsidian leading-snug" style={{ fontFamily: 'var(--font-body)' }}>
+        <Link
+          href={`/product/${notification.productSlug}`}
+          onClick={() => setVisible(false)}
+          className="flex items-start gap-3 flex-1 min-w-0 group"
+        >
+          <div className="w-2 h-2 rounded-full bg-brand-turquoise mt-1.5 flex-shrink-0 animate-pulse" />
+          <p
+            className="text-xs text-brand-obsidian leading-snug group-hover:text-brand-turquoise/90 transition-colors"
+            style={{ fontFamily: 'var(--font-body)' }}
+          >
             Someone in <strong>{notification.state}</strong> just purchased{' '}
-            <span className="text-brand-turquoise">{notification.productName}</span>
+            <span className="text-brand-turquoise underline-offset-2 group-hover:underline">
+              {notification.productName}
+            </span>
           </p>
-        </div>
+        </Link>
         <button
+          type="button"
           onClick={dismiss}
           className="text-brand-sienna hover:text-brand-obsidian flex-shrink-0"
           aria-label="Dismiss"

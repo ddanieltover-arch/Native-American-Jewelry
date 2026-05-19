@@ -182,6 +182,63 @@ export async function getFeaturedCategories() {
   return data ?? [];
 }
 
+export type CollectionCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  thumbnail_url: string | null;
+};
+
+/** Homepage collections grid — categories with ≥1 active product; thumbnail from a product image. */
+export async function getCollectionCategories(limit = 10): Promise<CollectionCategory[]> {
+  const supabase = getClient();
+
+  const [featured, { data: all }, { data: activeProducts }] = await Promise.all([
+    getFeaturedCategories(),
+    supabase
+      .from('categories')
+      .select('id, name, slug, banner_url, featured, sort_order')
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('products')
+      .select('category_id, images:product_images(url, is_primary, position)')
+      .eq('status', 'active')
+      .not('category_id', 'is', null)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  const categoryIdsWithProducts = new Set<string>();
+  const thumbByCategory = new Map<string, string>();
+  for (const row of activeProducts ?? []) {
+    const catId = row.category_id as string;
+    if (!catId) continue;
+    categoryIdsWithProducts.add(catId);
+    if (thumbByCategory.has(catId)) continue;
+    const images = (row.images as { url: string; is_primary?: boolean; position?: number }[]) ?? [];
+    const sorted = [...images].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    const url = sorted.find((i) => i.is_primary)?.url ?? sorted[0]?.url;
+    if (url) thumbByCategory.set(catId, url);
+  }
+
+  const merged: { id: string; name: string; slug: string; banner_url?: string | null }[] = [];
+  for (const c of featured) {
+    if (!merged.some((m) => m.id === c.id)) merged.push(c);
+  }
+  for (const c of all ?? []) {
+    if (!merged.some((m) => m.id === c.id)) merged.push(c);
+  }
+
+  const withProducts = merged.filter((c) => categoryIdsWithProducts.has(c.id));
+  const top = withProducts.slice(0, limit);
+
+  return top.map((cat) => ({
+    id: cat.id,
+    name: cat.name,
+    slug: cat.slug,
+    thumbnail_url: thumbByCategory.get(cat.id) ?? cat.banner_url ?? null,
+  }));
+}
+
 // ══════════════════════════════════════════════════════════
 // SHIPPING
 // ══════════════════════════════════════════════════════════

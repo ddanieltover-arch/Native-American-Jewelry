@@ -19,7 +19,11 @@ export default function ProductDetail({ product, related }: Props) {
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(
     product.variants[0]?.id
   );
-  const [activeImage, setActiveImage] = useState(0);
+  const primaryImageIndex = Math.max(
+    0,
+    product.images.findIndex((i) => i.is_primary)
+  );
+  const [activeImage, setActiveImage] = useState(primaryImageIndex);
   const [qty, setQty] = useState(1);
   const [descOpen, setDescOpen] = useState(true);
   const [shippingOpen, setShippingOpen] = useState(false);
@@ -32,6 +36,7 @@ export default function ProductDetail({ product, related }: Props) {
   const selectedVariant = product.variants.find((v) => v.id === selectedVariantId);
   const effectivePrice = product.price + (selectedVariant?.price_modifier ?? 0);
   const primaryImage = product.images.find((i) => i.is_primary) ?? product.images[0];
+  const displayImage = product.images[activeImage] ?? primaryImage;
   const gradient = getProductGradient(product.id);
 
   const handleAddToCart = () => {
@@ -72,8 +77,13 @@ export default function ProductDetail({ product, related }: Props) {
       <div className="grid md:grid-cols-2 gap-10 lg:gap-16 mb-20">
         <div className="space-y-3">
           <div className={cn('relative aspect-square overflow-hidden bg-gradient-to-br', gradient)}>
-            {primaryImage?.url ? (
-              <img src={primaryImage.url} alt={product.name} className="w-full h-full object-cover" />
+            {displayImage?.url ? (
+              <img
+                key={displayImage.url}
+                src={displayImage.url}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <span className="text-6xl opacity-20">💍</span>

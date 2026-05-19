@@ -5,25 +5,26 @@ import SiteImage from '@/components/brand/SiteImage';
 import {
   getFeaturedProducts,
   getNewArrivals,
-  getCategories,
+  getCollectionCategories,
 } from '@/lib/db';
 import { mapDbProducts } from '@/lib/product-mapper';
+import CategoryCollectionCard from '@/components/store/CategoryCollectionCard';
 import { SITE_IMAGES, IMAGE_ALT } from '@/lib/site-images';
 import { FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
-import type { Category } from '@/types';
 
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const [featuredRaw, newArrivalsRaw, categoriesRaw] = await Promise.all([
+  const [featuredRaw, newArrivalsRaw, collectionCategories] = await Promise.all([
     getFeaturedProducts(4),
     getNewArrivals(4),
-    getCategories(),
+    getCollectionCategories(10),
   ]);
 
   const featured = mapDbProducts(featuredRaw as Record<string, unknown>[]);
   const newArrivals = mapDbProducts(newArrivalsRaw as Record<string, unknown>[]);
-  const CATEGORIES = categoriesRaw as Category[];
+  const mobileCollections = collectionCategories.slice(0, 6);
+  const desktopCollections = collectionCategories.slice(0, 10);
 
   return (
     <div>
@@ -125,37 +126,16 @@ export default async function HomePage() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {CATEGORIES.map((cat, i) => {
-            const GRADIENTS = [
-              'from-amber-100 to-stone-200',
-              'from-teal-100 to-cyan-100',
-              'from-rose-100 to-amber-100',
-              'from-stone-100 to-neutral-200',
-              'from-orange-50 to-amber-100',
-              'from-slate-100 to-stone-100',
-            ];
-            return (
-              <Link
-                key={cat.id}
-                href={`/shop?category=${cat.slug}`}
-                className="group relative overflow-hidden aspect-[3/4] rounded"
-              >
-                <div
-                  className={`absolute inset-0 bg-gradient-to-br ${GRADIENTS[i % GRADIENTS.length]} transition-transform duration-500 group-hover:scale-105`}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-brand-obsidian/60 via-transparent to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <p
-                    className="text-brand-bone text-sm font-light text-center"
-                    style={{ fontFamily: 'var(--font-display)' }}
-                  >
-                    {cat.name}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
+        <div className="grid grid-cols-2 gap-3 lg:hidden">
+          {mobileCollections.map((cat) => (
+            <CategoryCollectionCard key={cat.id} category={cat} imageSizes="50vw" />
+          ))}
+        </div>
+
+        <div className="hidden lg:grid lg:grid-cols-5 gap-3">
+          {desktopCollections.map((cat) => (
+            <CategoryCollectionCard key={cat.id} category={cat} imageSizes="20vw" />
+          ))}
         </div>
       </section>
 
