@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ShoppingBag, Search, Heart, Menu, User, ChevronDown } from 'lucide-react';
 import { useCartStore, useUIStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { CATEGORIES } from '@/lib/mock-data';
+import Logo from '@/components/brand/Logo';
+import { FREE_SHIPPING_ANNOUNCEMENT } from '@/lib/shipping-constants';
 
 const NAV_LINKS = [
   { label: 'Shop All',  href: '/shop' },
@@ -42,11 +43,11 @@ export default function Header() {
       {/* Announcement bar */}
       <div className="bg-brand-obsidian text-brand-bone text-center py-1.5">
         <p className="text-label text-[10px] tracking-[0.16em]">
-          Free shipping on US orders over $75 &nbsp;·&nbsp; Authentic handcrafted jewelry
+          {FREE_SHIPPING_ANNOUNCEMENT} &nbsp;·&nbsp; Authentic handcrafted jewelry
         </p>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-8 flex items-center justify-between h-[56px]">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 flex items-center justify-between h-[64px]">
         {/* Left: hamburger (mobile) + nav (desktop) */}
         <div className="flex items-center gap-6">
           <button
@@ -72,22 +73,9 @@ export default function Header() {
         </div>
 
         {/* Center: logo */}
-        <Link href="/" className="absolute left-1/2 -translate-x-1/2">
-          <div className="text-center">
-            <span
-              className="block text-[1.35rem] font-light tracking-[0.06em] text-brand-obsidian leading-tight"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              Native American
-            </span>
-            <span
-              className="block text-[0.6rem] font-medium tracking-[0.28em] text-brand-turquoise uppercase"
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Jewelry
-            </span>
-          </div>
-        </Link>
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <Logo height={46} priority variant="header" className="max-h-[46px] w-auto" />
+        </div>
 
         {/* Right: icons */}
         <div className="flex items-center gap-1">

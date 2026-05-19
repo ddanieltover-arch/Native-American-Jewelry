@@ -30,7 +30,7 @@
   --border:       rgba(61, 44, 30, 0.12);
   --border-heavy: rgba(61, 44, 30, 0.25);
 
-  --header-height: 72px;
+  --header-height: 88px;
 }
 
 @layer base {

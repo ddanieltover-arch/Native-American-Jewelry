@@ -6,7 +6,9 @@ import { ArrowLeft, ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCartStore } from '@/lib/store';
 import { createClient } from '@/lib/supabase-client';
+import Logo from '@/components/brand/Logo';
 import { cn, formatPrice, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS } from '@/lib/utils';
+import { FREE_SHIPPING_ANNOUNCEMENT, FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
 import type { PaymentMethod, ShippingRate } from '@/types';
 
 type Step = 'information' | 'shipping' | 'payment' | 'confirmation';
@@ -286,6 +288,9 @@ export default function CheckoutPage() {
               <h2 className="text-heading-md text-brand-obsidian" style={{ fontFamily: 'var(--font-display)' }}>
                 Shipping Method
               </h2>
+              <p className="text-xs text-brand-sienna" style={{ fontFamily: 'var(--font-body)' }}>
+                {FREE_SHIPPING_ANNOUNCEMENT} on standard US delivery.
+              </p>
 
               <div className="space-y-3">
                 {shippingRates.filter(r =>
@@ -414,6 +419,9 @@ export default function CheckoutPage() {
           {/* Confirmation */}
           {step === 'confirmation' && (
             <div className="text-center py-12">
+              <div className="flex justify-center mb-6">
+                <Logo height={72} href="/" />
+              </div>
               <div className="w-16 h-16 rounded-full bg-brand-turquoise/15 border border-brand-turquoise/30 flex items-center justify-center mx-auto mb-6">
                 <Check size={28} className="text-brand-turquoise" />
               </div>
@@ -516,6 +524,14 @@ export default function CheckoutPage() {
                   ) : formatPrice(shippingCost)}
                 </span>
               </div>
+              {form.country === 'US' &&
+                shippingCost > 0 &&
+                subtotal < FREE_SHIPPING_THRESHOLD_US && (
+                  <p className="text-xs text-brand-sienna" style={{ fontFamily: 'var(--font-body)' }}>
+                    Add {formatPrice(FREE_SHIPPING_THRESHOLD_US - subtotal)} more for free standard
+                    shipping (orders over ${FREE_SHIPPING_THRESHOLD_US}).
+                  </p>
+                )}
               <div className="flex justify-between pt-2 border-t border-brand-sand/40">
                 <span
                   className="font-medium text-brand-obsidian"

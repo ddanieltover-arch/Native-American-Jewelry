@@ -363,7 +363,8 @@ async function scrapeProductPage(
     await page.waitForLoadState('domcontentloaded');
 
     const raw = await extractProductData(page, canonical, categoryRef?.name);
-    if (!raw) return 'error';
+    if (raw === 'filtered') return 'filtered';
+    if (raw === 'error') return 'error';
 
     // Transform (applies price filter + discount)
     const transformed = transformProduct(raw);

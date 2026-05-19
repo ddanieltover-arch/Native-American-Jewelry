@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, X, ChevronDown, Grid2X2, Grid3X3 } from 'lucide-react';
+import { Grid2X2, Grid3X3 } from 'lucide-react';
 import ProductCard from '@/components/store/ProductCard';
 import { cn } from '@/lib/utils';
 import type { Product, Category, ProductFilters } from '@/types';
@@ -83,18 +83,30 @@ function ShopContent() {
     filters.category || filters.inStock || search || priceRange[0] > 150;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-8 py-10">
-      <div className="mb-8">
-        <h1 className="text-heading-xl text-brand-obsidian" style={{ fontFamily: 'var(--font-display)' }}>
-          {filters.category
-            ? categories.find((c) => c.slug === filters.category)?.name ?? 'Shop'
-            : 'All Jewelry'}
-        </h1>
-        <p className="text-brand-sienna mt-1 text-sm" style={{ fontFamily: 'var(--font-body)' }}>
-          {loading ? 'Loading…' : `Showing ${total} piece${total !== 1 ? 's' : ''}`}
-        </p>
-      </div>
+    <>
+      <section className="relative h-48 md:h-56 overflow-hidden">
+        <img
+          src="/images/jewelry-flatlay.png"
+          alt="Sterling silver and turquoise rings, cuffs, and necklace on natural stone"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-brand-obsidian/50" />
+        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 h-full flex flex-col justify-center">
+          <h1
+            className="text-heading-lg text-brand-bone"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            {filters.category
+              ? categories.find((c) => c.slug === filters.category)?.name ?? 'Shop'
+              : 'All Jewelry'}
+          </h1>
+          <p className="text-brand-sand/80 mt-1 text-sm" style={{ fontFamily: 'var(--font-body)' }}>
+            {loading ? 'Loading…' : `Showing ${total} piece${total !== 1 ? 's' : ''}`}
+          </p>
+        </div>
+      </section>
 
+    <div className="max-w-7xl mx-auto px-4 md:px-8 py-10">
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <input
           type="search"
@@ -104,40 +116,25 @@ function ShopContent() {
           className="input-base flex-1 min-w-[200px] max-w-xs text-sm"
         />
 
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => setFilters((f) => ({ ...f, category: undefined }))}
-            className={cn(
-              'px-3 py-1.5 text-xs border transition-colors',
-              !filters.category
-                ? 'border-brand-obsidian bg-brand-obsidian text-brand-bone'
-                : 'border-brand-bone text-brand-sienna hover:border-brand-obsidian'
-            )}
-            style={{ fontFamily: 'var(--font-body)' }}
-          >
-            All
-          </button>
+        <select
+          value={filters.category ?? ''}
+          onChange={(e) =>
+            setFilters((f) => ({
+              ...f,
+              category: e.target.value || undefined,
+            }))
+          }
+          className="appearance-none input-base pr-8 text-sm py-2 cursor-pointer min-w-[200px] max-w-[280px]"
+          style={{ fontFamily: 'var(--font-body)' }}
+          aria-label="Category"
+        >
+          <option value="">All categories</option>
           {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() =>
-                setFilters((f) => ({
-                  ...f,
-                  category: f.category === cat.slug ? undefined : cat.slug,
-                }))
-              }
-              className={cn(
-                'px-3 py-1.5 text-xs border transition-colors',
-                filters.category === cat.slug
-                  ? 'border-brand-turquoise bg-brand-turquoise text-white'
-                  : 'border-brand-bone text-brand-sienna hover:border-brand-turquoise'
-              )}
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
+            <option key={cat.id} value={cat.slug}>
               {cat.name}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
 
         <div className="ml-auto flex items-center gap-3">
           <select
@@ -201,6 +198,7 @@ function ShopContent() {
         </div>
       )}
     </div>
+    </>
   );
 }
 

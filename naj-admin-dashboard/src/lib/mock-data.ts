@@ -176,10 +176,10 @@ export const MOCK_ANALYTICS: AnalyticsOverview = {
 
 // ─── Shipping rates ───────────────────────────────────────
 export const MOCK_SHIPPING_RATES: ShippingRate[] = [
-  { id: 'ship-1', zone: 'usa',           method: 'standard', label: 'Standard Shipping (USA)',   rate: 9.99,  free_threshold: 75,   est_days_min: 5,  est_days_max: 8,  active: true },
-  { id: 'ship-2', zone: 'usa',           method: 'express',  label: 'Express Shipping (USA)',    rate: 19.99, free_threshold: 150,  est_days_min: 2,  est_days_max: 4,  active: true },
-  { id: 'ship-3', zone: 'international', method: 'standard', label: 'Standard International',    rate: 24.99, free_threshold: null, est_days_min: 10, est_days_max: 21, active: true },
-  { id: 'ship-4', zone: 'international', method: 'express',  label: 'Express International',     rate: 49.99, free_threshold: null, est_days_min: 5,  est_days_max: 10, active: true },
+  { id: 'ship-1', zone: 'usa',           method: 'standard', label: 'Standard Shipping (USA)',           rate: 15, free_threshold: 400,  est_days_min: 5,  est_days_max: 8,  active: true },
+  { id: 'ship-2', zone: 'usa',           method: 'express',  label: 'Express Shipping (USA)',            rate: 25, free_threshold: null, est_days_min: 2,  est_days_max: 4,  active: true },
+  { id: 'ship-3', zone: 'international', method: 'standard', label: 'Standard Shipping (International)', rate: 35, free_threshold: null, est_days_min: 10, est_days_max: 21, active: true },
+  { id: 'ship-4', zone: 'international', method: 'express',  label: 'Express Shipping (International)',  rate: 55, free_threshold: null, est_days_min: 5,  est_days_max: 10, active: true },
 ];
 
 // ─── Coupons ──────────────────────────────────────────────

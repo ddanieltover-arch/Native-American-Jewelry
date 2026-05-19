@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminRejectProduct } from '@/lib/db';
+import { adminRejectProduct, adminBulkRejectProducts } from '@/lib/db';
 import { verifyAdminToken } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -9,11 +9,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { productId } = await req.json();
-  if (!productId) {
-    return NextResponse.json({ error: 'productId required' }, { status: 400 });
+  const { productId, productIds } = await req.json();
+
+  if (productIds?.length) {
+    await adminBulkRejectProducts(productIds);
+    return NextResponse.json({ data: { rejected: productIds.length } });
   }
 
-  await adminRejectProduct(productId);
-  return NextResponse.json({ data: { rejected: true } });
+  if (productId) {
+    await adminRejectProduct(productId);
+    return NextResponse.json({ data: { rejected: true } });
+  }
+
+  return NextResponse.json({ error: 'productId or productIds required' }, { status: 400 });
 }

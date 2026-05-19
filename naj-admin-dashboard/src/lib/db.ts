@@ -168,6 +168,15 @@ export async function adminBulkApproveProducts(productIds: string[], adminId: st
   if (error) throw error;
 }
 
+export async function adminBulkRejectProducts(productIds: string[]) {
+  const supabase = getAdminClient();
+  const { error } = await supabase
+    .from('products')
+    .update({ status: 'archived' })
+    .in('id', productIds);
+  if (error) throw error;
+}
+
 export async function adminGetProduct(productId: string) {
   const supabase = getAdminClient();
   const { data, error } = await supabase

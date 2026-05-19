@@ -1,23 +1,24 @@
 import Link from 'next/link';
 import { ArrowRight, Star, Shield, Truck, Award } from 'lucide-react';
 import ProductCard from '@/components/store/ProductCard';
+import SiteImage from '@/components/brand/SiteImage';
 import {
   getFeaturedProducts,
   getNewArrivals,
   getCategories,
-  getApprovedTestimonials,
 } from '@/lib/db';
 import { mapDbProducts } from '@/lib/product-mapper';
+import { SITE_IMAGES, IMAGE_ALT } from '@/lib/site-images';
+import { FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
 import type { Category } from '@/types';
 
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const [featuredRaw, newArrivalsRaw, categoriesRaw, testimonials] = await Promise.all([
+  const [featuredRaw, newArrivalsRaw, categoriesRaw] = await Promise.all([
     getFeaturedProducts(4),
     getNewArrivals(4),
     getCategories(),
-    getApprovedTestimonials(3).catch(() => []),
   ]);
 
   const featured = mapDbProducts(featuredRaw as Record<string, unknown>[]);
@@ -26,66 +27,25 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* ── Hero ─────────────────────────────────────────── */}
-      <section className="relative min-h-[92vh] flex items-end pb-20 overflow-hidden">
-        {/* Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-umber via-brand-charcoal to-brand-obsidian" />
-
-        {/* Decorative turquoise glow */}
-        <div className="absolute top-1/4 right-1/4 w-[600px] h-[600px] rounded-full bg-brand-turquoise/8 blur-[120px]" />
-        <div className="absolute bottom-1/4 left-1/6 w-[400px] h-[400px] rounded-full bg-brand-gold/8 blur-[100px]" />
-
-        {/* Grain overlay */}
-        <div
-          className="absolute inset-0 opacity-40"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E")`,
-          }}
-        />
-
-        {/* Content */}
-        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 w-full">
-          <div className="max-w-2xl">
-            <span
-              className="inline-block text-brand-turquoise text-xs tracking-[0.22em] uppercase mb-6"
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Authentic · Handcrafted · Traditional
-            </span>
-
-            <h1
-              className="text-display text-brand-bone mb-6 text-balance"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              Jewelry of the
-              <br />
-              <em className="italic text-brand-turquoise">Southwest</em>
-            </h1>
-
-            <p
-              className="text-brand-sand/80 text-lg font-light mb-10 max-w-lg leading-relaxed"
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Authentic pieces handcrafted by Navajo, Zuni, Hopi & Pueblo artisans.
-              Every jewel tells a story passed down through generations.
-            </p>
-
-            <div className="flex flex-wrap gap-4">
-              <Link href="/shop" className="btn-turquoise flex items-center gap-2 text-sm">
-                Shop All Jewelry
-                <ArrowRight size={16} />
-              </Link>
-              <Link href="/about" className="btn-ghost border-white/30 text-brand-bone hover:bg-white/10 hover:border-white/60 text-sm">
-                Our Story
-              </Link>
-            </div>
-          </div>
+      {/* ── Hero (designed banner) ─────────────────────────── */}
+      <section className="relative w-full min-h-[520px] sm:min-h-[640px] lg:min-h-[min(88vh,820px)] overflow-hidden">
+        <div className="absolute inset-x-0 bottom-0 top-3 sm:top-4 md:top-5">
+          <SiteImage
+            src={SITE_IMAGES.heroMain}
+            alt={IMAGE_ALT.heroMain}
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-[42%_18%] sm:object-[45%_20%] lg:object-[48%_22%]"
+          />
         </div>
-
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-50">
-          <div className="w-px h-12 bg-gradient-to-b from-transparent via-brand-sand to-transparent animate-pulse" />
-        </div>
+        <Link
+          href="/shop"
+          className="absolute inset-0 z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-turquoise focus-visible:ring-offset-2"
+          aria-label="Explore the jewelry collection"
+        >
+          <span className="sr-only">Explore collection</span>
+        </Link>
       </section>
 
       {/* ── Trust Badges ────────────────────────────────── */}
@@ -93,9 +53,9 @@ export default async function HomePage() {
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 grid grid-cols-2 md:grid-cols-4 gap-6">
           {[
             { icon: Shield, label: 'Certificate of Authenticity', sub: 'Every piece verified' },
-            { icon: Award,  label: 'Direct from Artisans',        sub: 'Navajo, Zuni & Hopi' },
-            { icon: Truck,  label: 'Free US Shipping',            sub: 'On orders over $75' },
-            { icon: Star,   label: '5-Star Reviews',              sub: '200+ happy collectors' },
+            { icon: Award, label: 'Direct from Artisans', sub: 'Navajo, Zuni & Hopi' },
+            { icon: Truck, label: 'Free US Shipping', sub: `On orders over $${FREE_SHIPPING_THRESHOLD_US}` },
+            { icon: Star, label: '5-Star Reviews', sub: '200+ happy collectors' },
           ].map(({ icon: Icon, label, sub }) => (
             <div key={label} className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full bg-brand-turquoise/15 flex items-center justify-center flex-shrink-0">
@@ -117,6 +77,39 @@ export default async function HomePage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Lifestyle editorial ───────────────────────────── */}
+      <section className="grid md:grid-cols-2 min-h-[420px]">
+        <div className="relative min-h-[320px] md:min-h-full">
+          <SiteImage
+            src={SITE_IMAGES.lifestyleDesert}
+            alt={IMAGE_ALT.lifestyleDesert}
+            fill
+            sizes="(max-width: 768px) 100vw, 50vw"
+            className="object-cover"
+          />
+        </div>
+        <div className="flex flex-col justify-center px-8 md:px-14 py-14 bg-brand-parchment">
+          <span className="text-label text-brand-turquoise">Wear the Southwest</span>
+          <h2
+            className="text-heading-xl text-brand-obsidian mt-3 mb-5"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            Layered turquoise.<br />
+            <em className="italic text-brand-turquoise">Living tradition.</em>
+          </h2>
+          <p
+            className="text-brand-sienna leading-relaxed mb-8 max-w-md"
+            style={{ fontFamily: 'var(--font-body)' }}
+          >
+            Squash blossom necklaces, concho cuffs, and sterling pearls — curated for collectors
+            who want authentic artistry you can feel in every stone.
+          </p>
+          <Link href="/shop" className="btn-primary inline-flex items-center gap-2 text-sm w-fit">
+            Shop Necklaces & Cuffs <ArrowRight size={16} />
+          </Link>
         </div>
       </section>
 
@@ -166,6 +159,42 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── Flatlay feature ───────────────────────────────── */}
+      <section className="relative py-24 overflow-hidden">
+        <div className="absolute inset-0">
+          <SiteImage
+            src={SITE_IMAGES.jewelryFlatlay}
+            alt={IMAGE_ALT.jewelryFlatlay}
+            fill
+            sizes="100vw"
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-brand-obsidian/55" />
+        </div>
+        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 text-center">
+          <span className="text-label text-brand-turquoise">Sterling & Turquoise</span>
+          <h2
+            className="text-heading-xl text-brand-bone mt-3 mb-5 max-w-2xl mx-auto"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            Every piece tells a story
+          </h2>
+          <p
+            className="text-brand-sand/85 max-w-xl mx-auto mb-8 leading-relaxed"
+            style={{ fontFamily: 'var(--font-body)' }}
+          >
+            Hand-stamped silver, natural turquoise, and techniques passed down through
+            generations of Navajo, Zuni, Hopi, and Pueblo jewelers.
+          </p>
+          <Link
+            href="/shop"
+            className="btn-turquoise inline-flex items-center gap-2 text-sm"
+          >
+            View All Pieces <ArrowRight size={16} />
+          </Link>
+        </div>
+      </section>
+
       {/* ── Featured Products ─────────────────────────────── */}
       <section className="py-20 px-4 md:px-8 bg-brand-bone">
         <div className="max-w-7xl mx-auto">
@@ -197,54 +226,128 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Editorial Banner ──────────────────────────────── */}
-      <section className="py-24 px-4 md:px-8 bg-brand-charcoal relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-1/2 h-full opacity-10">
-          <div className="w-full h-full bg-gradient-to-l from-brand-turquoise to-transparent" />
+      {/* ── Heritage + store ────────────────────────────────── */}
+      <section className="grid lg:grid-cols-2 bg-brand-charcoal">
+        <div className="flex flex-col justify-center px-8 md:px-14 py-16 order-2 lg:order-1">
+          <span className="text-label text-brand-turquoise">Why Native American Jewelry</span>
+          <h2
+            className="text-heading-xl text-brand-bone mt-3 mb-6"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            More Than Jewelry —<br />
+            <em className="italic text-brand-sand">Living Tradition</em>
+          </h2>
+          <p
+            className="text-brand-sand/80 leading-relaxed mb-8"
+            style={{ fontFamily: 'var(--font-body)' }}
+          >
+            Every piece is handcrafted by master jewelers from Navajo, Zuni, Hopi, and Pueblo
+            nations. When you wear our jewelry, you carry that history with you.
+          </p>
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            {[
+              ['100%', 'Authentic Pieces'],
+              ['200+', 'Collector Reviews'],
+              ['30+', 'Artisan Partners'],
+              ['15+', 'Years Experience'],
+            ].map(([num, label]) => (
+              <div key={label} className="border border-white/10 p-4">
+                <p
+                  className="text-2xl font-light text-brand-turquoise"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  {num}
+                </p>
+                <p
+                  className="text-xs text-brand-sand/60 mt-1 uppercase tracking-wider"
+                  style={{ fontFamily: 'var(--font-body)' }}
+                >
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+          <Link
+            href="/about"
+            className="btn-ghost border-white/30 text-brand-bone hover:bg-white/10 hover:border-white text-sm w-fit"
+          >
+            Read Our Story
+          </Link>
         </div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="max-w-xl">
-            <span className="text-label text-brand-turquoise">Why Native American Jewelry</span>
+        <div className="relative min-h-[360px] order-1 lg:order-2">
+          <SiteImage
+            src={SITE_IMAGES.storeInterior}
+            alt={IMAGE_ALT.storeInterior}
+            fill
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            className="object-cover"
+          />
+        </div>
+      </section>
+
+      {/* ── Packaging ─────────────────────────────────────── */}
+      <section className="py-20 px-4 md:px-8 bg-brand-parchment">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12 max-w-2xl mx-auto">
+            <span className="text-label text-brand-turquoise">Unboxing Experience</span>
             <h2
-              className="text-heading-xl text-brand-bone mt-3 mb-6"
+              className="text-heading-xl text-brand-obsidian mt-2"
               style={{ fontFamily: 'var(--font-display)' }}
             >
-              More Than Jewelry —<br />
-              <em className="italic text-brand-sand">Living Tradition</em>
+              Gift-ready presentation
             </h2>
-            <p
-              className="text-brand-sand/80 leading-relaxed mb-8"
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Every piece in our collection is handcrafted by master jewelers from Navajo,
-              Zuni, Hopi, and Pueblo nations — people who have refined these techniques
-              across centuries. When you wear our jewelry, you carry that history with you.
+            <p className="text-brand-sienna mt-3 text-sm" style={{ fontFamily: 'var(--font-body)' }}>
+              Every order arrives in branded packaging with a certificate of authenticity.
             </p>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {[
-                ['100%', 'Authentic Pieces'],
-                ['200+', 'Collector Reviews'],
-                ['30+', 'Artisan Partners'],
-                ['15+', 'Years Experience'],
-              ].map(([num, label]) => (
-                <div key={label} className="border border-white/10 p-4">
-                  <p
-                    className="text-2xl font-light text-brand-turquoise"
-                    style={{ fontFamily: 'var(--font-display)' }}
-                  >
-                    {num}
-                  </p>
-                  <p
-                    className="text-xs text-brand-sand/60 mt-1 uppercase tracking-wider"
-                    style={{ fontFamily: 'var(--font-body)' }}
-                  >
-                    {label}
-                  </p>
-                </div>
-              ))}
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="relative aspect-[4/3] overflow-hidden rounded-sm">
+              <SiteImage
+                src={SITE_IMAGES.packagingPremium}
+                alt={IMAGE_ALT.packagingPremium}
+                fill
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="object-cover"
+              />
             </div>
-            <Link href="/about" className="btn-ghost border-white/30 text-brand-bone hover:bg-white/10 hover:border-white text-sm">
-              Read Our Story
+            <div className="relative aspect-[4/3] overflow-hidden rounded-sm">
+              <SiteImage
+                src={SITE_IMAGES.packagingGift}
+                alt={IMAGE_ALT.packagingGift}
+                fill
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="object-cover"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Boutique visit ────────────────────────────────── */}
+      <section className="relative min-h-[380px] flex items-center">
+        <SiteImage
+          src={SITE_IMAGES.storeBoutique}
+          alt={IMAGE_ALT.storeBoutique}
+          fill
+          sizes="100vw"
+          className="object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-brand-obsidian/80 via-brand-obsidian/50 to-transparent" />
+        <div className="relative z-10 max-w-7xl mx-auto px-4 md:px-8 py-16 w-full">
+          <div className="max-w-md">
+            <span className="text-label text-brand-turquoise">Our Boutique</span>
+            <h2
+              className="text-heading-lg text-brand-bone mt-2 mb-4"
+              style={{ fontFamily: 'var(--font-display)' }}
+            >
+              Handcrafted heritage, in person
+            </h2>
+            <p className="text-brand-sand/80 text-sm mb-6" style={{ fontFamily: 'var(--font-body)' }}>
+              Visit our Southwest showroom or shop online — the same curated collection,
+              the same commitment to authentic Native American artistry.
+            </p>
+            <Link href="/contact" className="btn-turquoise text-sm inline-flex items-center gap-2">
+              Contact Us <ArrowRight size={14} />
             </Link>
           </div>
         </div>
@@ -325,7 +428,7 @@ export default async function HomePage() {
                   className="text-brand-obsidian leading-relaxed mb-4 text-sm"
                   style={{ fontFamily: 'var(--font-body)' }}
                 >
-                  "{t.text}"
+                  &ldquo;{t.text}&rdquo;
                 </p>
                 <div className="border-t border-brand-bone pt-3">
                   <p

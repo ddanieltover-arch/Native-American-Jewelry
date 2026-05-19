@@ -14,7 +14,7 @@ export default function StoreLayout({
   return (
     <>
       <Header />
-      <main className="min-h-screen pt-[72px]">{children}</main>
+      <main className="min-h-screen pt-[var(--header-height)]">{children}</main>
       <Footer />
       <CartDrawer />
       <SearchOverlay />

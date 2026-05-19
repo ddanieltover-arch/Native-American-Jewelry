@@ -13,6 +13,7 @@ import { cn, ROLE_LABELS, ROLE_COLORS, lookupLabel, lookupColor } from '@/lib/ut
 import { useAdminStore } from '@/lib/store';
 import { useAdminApi } from '@/lib/use-admin-api';
 import type { AdminUser } from '@/types';
+import Logo from '@/components/brand/Logo';
 
 // ─── Nav config ───────────────────────────────────────────
 const NAV = [
@@ -80,11 +81,10 @@ function AdminSidebar({
     >
       {/* Logo */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-gray-800">
-        {!sidebarCollapsed && (
-          <div>
-            <p className="text-sm font-semibold text-white leading-tight">NAJ Admin</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">Native American Jewelry</p>
-          </div>
+        {!sidebarCollapsed ? (
+          <Logo height={36} href="/admin" className="brightness-110" />
+        ) : (
+          <Logo height={28} href="/admin" className="mx-auto brightness-110" />
         )}
         <button
           onClick={() => collapseSidebar(!sidebarCollapsed)}

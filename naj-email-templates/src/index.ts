@@ -1,4 +1,4 @@
-export { BRAND, siteUrl } from './brand';
+export { BRAND, siteUrl, logoUrl } from './brand';
 export { escapeHtml, formatUsd } from './utils';
 export { emailLayout, emailButton, infoBox } from './layout';
 export {

@@ -6,6 +6,7 @@ import { ShoppingBag, Heart, Star, Shield, Truck, ChevronDown } from 'lucide-rea
 import { toast } from 'sonner';
 import { useCartStore, useWishlistStore, useRecentlyViewedStore } from '@/lib/store';
 import { cn, formatPrice, getProductGradient } from '@/lib/utils';
+import { FREE_SHIPPING_ANNOUNCEMENT } from '@/lib/shipping-constants';
 import ProductCard from '@/components/store/ProductCard';
 import type { Product } from '@/types';
 
@@ -179,7 +180,7 @@ export default function ProductDetail({ product, related }: Props) {
           <div className="space-y-2.5 mb-6 p-4 bg-brand-bone border border-brand-sand/30">
             {[
               { icon: Shield, text: 'Certificate of Authenticity included' },
-              { icon: Truck, text: 'Free shipping on US orders over $75' },
+              { icon: Truck, text: FREE_SHIPPING_ANNOUNCEMENT },
             ].map(({ icon: Icon, text }) => (
               <div key={text} className="flex items-center gap-2.5">
                 <Icon size={14} className="text-brand-turquoise flex-shrink-0" />

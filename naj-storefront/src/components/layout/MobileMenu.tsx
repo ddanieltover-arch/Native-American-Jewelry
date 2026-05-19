@@ -6,6 +6,8 @@ import { X, ChevronRight, Instagram, Facebook } from 'lucide-react';
 import { useUIStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/mock-data';
+import Logo from '@/components/brand/Logo';
+import { FREE_SHIPPING_US_LABEL } from '@/lib/shipping-constants';
 
 export default function MobileMenu() {
   const { isMobileMenuOpen, closeMobileMenu } = useUIStore();
@@ -45,12 +47,7 @@ export default function MobileMenu() {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-brand-bone">
-          <span
-            className="text-lg font-light text-brand-obsidian tracking-wide"
-            style={{ fontFamily: 'var(--font-display)' }}
-          >
-            Native American Jewelry
-          </span>
+          <Logo height={40} href="/" />
           <button
             onClick={closeMobileMenu}
             className="p-2 -mr-2 text-brand-sienna hover:text-brand-obsidian transition-colors"
@@ -125,10 +122,13 @@ export default function MobileMenu() {
               Info
             </p>
             {[
-              { label: 'Our Story',         href: '/about' },
+              { label: 'Our Story',          href: '/about' },
+              { label: 'How to Order',       href: '/how-to-order' },
+              { label: 'FAQ',                href: '/faq' },
               { label: 'Authenticity',       href: '/authenticity' },
               { label: 'Payment Methods',    href: '/payment-methods' },
               { label: 'Shipping & Returns', href: '/shipping' },
+              { label: 'Blog',               href: '/blog' },
               { label: 'Contact Us',         href: '/contact' },
             ].map(({ label, href }) => (
               <Link
@@ -148,7 +148,7 @@ export default function MobileMenu() {
         {/* Footer */}
         <div className="border-t border-brand-bone px-5 py-4">
           <p className="text-xs text-brand-sienna mb-3" style={{ fontFamily: 'var(--font-body)' }}>
-            Free US shipping on orders over $75
+            {FREE_SHIPPING_US_LABEL}
           </p>
           <div className="flex gap-3">
             <a href="#" className="w-8 h-8 border border-brand-bone flex items-center justify-center text-brand-sienna hover:border-brand-turquoise hover:text-brand-turquoise transition-colors">

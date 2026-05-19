@@ -1,10 +1,13 @@
 import { Page } from 'playwright';
+import { loadPageScript } from './in-browser/load-script';
+import { runInPage } from './page-eval';
 import { logger } from '../utils/logger';
 import { parsePrice, normalizeText, stripHtml } from '../utils/helpers';
 import { resolveUsdPrice, isPlausibleUsdPrice } from '../utils/price';
 import { mergeProductImageUrls } from '../utils/product-images';
 import {
   extractShopifyProduct,
+  fetchShopifyProductJson,
   extractProductGalleryImages,
   extractProductCategoryFromPage,
   normalizeShopifyProductUrl,
@@ -12,16 +15,23 @@ import {
 } from './shopify';
 import type { RawProduct, RawVariant } from '../types';
 
+export type ExtractOutcome = RawProduct | 'filtered' | 'error';
+
 // ─── Main extraction entry point ──────────────────────────
 export async function extractProductData(
   page: Page,
   url:  string,
   categoryHint?: string | null
-): Promise<RawProduct | null> {
+): Promise<ExtractOutcome> {
   try {
-    const canonicalUrl = normalizeShopifyProductUrl(page.url()) ?? normalizeShopifyProductUrl(url) ?? url;
+    const canonicalUrl =
+      normalizeShopifyProductUrl(url) ??
+      normalizeShopifyProductUrl(page.url()) ??
+      url;
 
-    const shopify = await extractShopifyProduct(page);
+    const shopify =
+      (await fetchShopifyProductJson(canonicalUrl)) ??
+      (await extractShopifyProduct(page));
     const jsonLd  = await extractJsonLd(page);
     const ogDom   = await extractOpenGraph(page, url);
 
@@ -39,14 +49,14 @@ export async function extractProductData(
         shopify:  shopify?.priceUsd,
         currency: shopify?.currency,
       });
-      return null;
+      return 'filtered';
     }
 
     const name =
       normalizeText(shopify?.name ?? jsonLd?.name ?? ogDom?.name ?? '');
-    if (!name || name.length < 3) return null;
+    if (!name || name.length < 3) return 'filtered';
 
-    const galleryDom = await extractProductGalleryImages(page);
+    const galleryDom = (await extractProductGalleryImages(page)) ?? [];
     const images = mergeProductImageUrls([
       ...(shopify?.images ?? []),
       ...galleryDom,
@@ -89,8 +99,10 @@ export async function extractProductData(
       categoryName,
     };
   } catch (err) {
-    logger.error('Extraction error', { url, err });
-    return null;
+    const message = err instanceof Error ? err.message : String(err);
+    const stack   = err instanceof Error ? err.stack : undefined;
+    logger.error('Extraction error', { url, message, stack });
+    return 'error';
   }
 }
 
@@ -99,22 +111,8 @@ async function extractJsonLd(
   page: Page
 ): Promise<(RawProduct & { currency?: string | null }) | null> {
   try {
-    const raw = await page.evaluate(() => {
-      const scripts = Array.from(
-        document.querySelectorAll('script[type="application/ld+json"]')
-      );
-
-      for (const script of scripts) {
-        try {
-          const data = JSON.parse(script.textContent || '');
-          // May be wrapped in @graph array
-          const items = Array.isArray(data['@graph']) ? data['@graph'] : [data];
-          const product = items.find((item: any) => item['@type'] === 'Product');
-          if (product) return product;
-        } catch {}
-      }
-      return null;
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await runInPage<any | null>(page, loadPageScript('extract-json-ld.js'));
 
     if (!raw) return null;
 
@@ -125,9 +123,9 @@ async function extractJsonLd(
     let currency: string | null = null;
     if (raw.offers) {
       const offer = Array.isArray(raw.offers) ? raw.offers[0] : raw.offers;
-      price    = parsePrice(offer.price?.toString());
-      currency = offer.priceCurrency?.toString()?.toUpperCase() ?? null;
-      inStock  = offer.availability?.includes('InStock') ?? true;
+      price    = parsePrice(offer?.price?.toString());
+      currency = offer?.priceCurrency?.toString()?.toUpperCase() ?? null;
+      inStock  = offer?.availability?.includes('InStock') ?? true;
     }
 
     if (!price) return null;
@@ -162,18 +160,24 @@ async function extractJsonLd(
       });
     }
 
+    const keywords = raw.keywords;
+    const tags =
+      typeof keywords === 'string'
+        ? keywords.split(',').map((t: string) => t.trim())
+        : [];
+
     return {
-      name:         normalizeText(raw.name ?? ''),
-      description:  raw.description ? stripHtml(raw.description) : null,
+      name:         normalizeText(String(raw.name ?? '')),
+      description:  raw.description ? stripHtml(String(raw.description)) : null,
       price,
       currency,
       images,
       variants,
       sku:          raw.sku ?? raw.mpn ?? null,
-      tags:         raw.keywords ? raw.keywords.split(',').map((t: string) => t.trim()) : [],
+      tags,
       inStock,
       sourceUrl:    page.url(),
-      categoryName: raw.category ?? null,
+      categoryName: raw.category != null ? String(raw.category) : null,
     };
   } catch {
     return null;
@@ -181,7 +185,7 @@ async function extractJsonLd(
 }
 
 // ─── Strategy 2: OpenGraph + DOM ─────────────────────────
-async function extractOpenGraph(page: Page, url: string): Promise<{
+async function extractOpenGraph(page: Page, _url: string): Promise<{
   name: string | null;
   description: string | null;
   images: string[];
@@ -189,46 +193,17 @@ async function extractOpenGraph(page: Page, url: string): Promise<{
   inStock: boolean;
 } | null> {
   try {
-    const data = await page.evaluate(() => {
-      const getMeta = (property: string) =>
-        document.querySelector(`meta[property="${property}"]`)?.getAttribute('content') ??
-        document.querySelector(`meta[name="${property}"]`)?.getAttribute('content') ??
-        null;
-
-      const getAll = (property: string) =>
-        Array.from(document.querySelectorAll(`meta[property="${property}"]`))
-          .map((el) => el.getAttribute('content'))
-          .filter(Boolean) as string[];
-
-      const priceEl =
-        document.querySelector('[class*="price"]:not([class*="compare"]):not([class*="original"])') ??
-        document.querySelector('.product-price') ??
-        document.querySelector('[data-price]') ??
-        document.querySelector('.price');
-
-      const titleEl =
-        document.querySelector('h1.product-title') ??
-        document.querySelector('h1[class*="product"]') ??
-        document.querySelector('h1');
-
-      const descEl =
-        document.querySelector('[class*="product-description"]') ??
-        document.querySelector('[class*="description"]') ??
-        document.querySelector('.product-body');
-
-      return {
-        ogTitle:  getMeta('og:title'),
-        ogDesc:   getMeta('og:description'),
-        ogImage:  getMeta('og:image'),
-        ogImages: getAll('og:image'),
-        ogPrice:  getMeta('product:price:amount') ?? getMeta('og:price:amount'),
-        domTitle: titleEl?.textContent?.trim() ?? null,
-        domDesc:  descEl?.textContent?.trim() ?? null,
-        domPrice: priceEl?.textContent?.trim() ??
-                  priceEl?.getAttribute('data-price') ?? null,
-        inStock:  !document.querySelector('.sold-out, .out-of-stock, [class*="unavailable"]'),
-      };
-    });
+    const data = await runInPage<{
+      ogTitle: string | null;
+      ogDesc: string | null;
+      ogImage: string | null;
+      ogImages: string[];
+      ogPrice: string | null;
+      domTitle: string | null;
+      domDesc: string | null;
+      domPrice: string | null;
+      inStock: boolean;
+    }>(page, loadPageScript('extract-open-graph.js'));
 
     const name = data.domTitle ?? data.ogTitle;
     if (!name) return null;
@@ -369,8 +344,13 @@ export async function extractProductLinks(
 }
 
 /** Map Shopify product tags to NAJ category names when they match known jewelry types */
-function inferCategoryFromTags(tags: string[]): string | null {
-  const joined = tags.join(' ').toLowerCase();
+function inferCategoryFromTags(tags: string[] | string | undefined): string | null {
+  const list = Array.isArray(tags)
+    ? tags
+    : typeof tags === 'string'
+      ? tags.split(',').map((t) => t.trim()).filter(Boolean)
+      : [];
+  const joined = list.join(' ').toLowerCase();
   const rules: Array<[RegExp, string]> = [
     [/necklace|squash blossom|lariat|choker/i, 'Necklaces'],
     [/\bring\b|cuff ring|band\b/i, 'Rings'],

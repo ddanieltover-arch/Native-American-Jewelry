@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Logo from '@/components/brand/Logo';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -54,7 +55,10 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-stone-100 px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm bg-white p-8 shadow-sm border border-stone-200">
-        <h1 className="text-xl font-semibold text-stone-900 mb-6">Admin Sign In</h1>
+        <div className="flex justify-center mb-6">
+          <Logo height={80} href={null} priority />
+        </div>
+        <h1 className="text-xl font-semibold text-stone-900 mb-6 text-center">Admin Sign In</h1>
         <input
           type="email"
           required

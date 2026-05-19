@@ -15,10 +15,10 @@ ON CONFLICT (slug) DO NOTHING;
 
 -- ─── Shipping Rates ───────────────────────────────────────
 INSERT INTO shipping_rates (zone, method, label, rate, free_threshold, est_days_min, est_days_max, active) VALUES
-  ('usa',           'standard', 'Standard Shipping (USA)',   9.99,  75.00,  5,  8,  true),
-  ('usa',           'express',  'Express Shipping (USA)',   19.99, 150.00,  2,  4,  true),
-  ('international', 'standard', 'Standard International',  24.99,   NULL, 10, 21,  true),
-  ('international', 'express',  'Express International',   49.99,   NULL,  5, 10,  true)
+  ('usa',           'standard', 'Standard Shipping (USA)',           15.00, 400.00, 5,  8,  true),
+  ('usa',           'express',  'Express Shipping (USA)',            25.00,   NULL, 2,  4,  true),
+  ('international', 'standard', 'Standard Shipping (International)', 35.00,   NULL, 10, 21,  true),
+  ('international', 'express',  'Express Shipping (International)',  55.00,   NULL,  5, 10,  true)
 ON CONFLICT DO NOTHING;
 
 -- ─── Notification popup ───────────────────────────────────

@@ -1,5 +1,7 @@
 import { Page } from 'playwright';
 import type { RawVariant } from '../types';
+import { runInPage } from './page-eval';
+import { loadPageScript } from './in-browser/load-script';
 
 export interface ShopifyProductData {
   name:         string | null;
@@ -98,110 +100,109 @@ export function withUsdCurrency(url: string): string {
   return u.href;
 }
 
-/**
- * Primary price source: Shopify product JSON (prices in cents, store base currency).
- * Prefer when currency is USD or price is in a sane USD range after /100.
- */
-export async function extractShopifyProduct(page: Page): Promise<ShopifyProductData | null> {
-  return page.evaluate(() => {
-    const win = window as any;
-    const activeCurrency: string | null =
-      win.Shopify?.currency?.active ??
-      win.Shopify?.Checkout?.currency ??
-      document.querySelector('meta[property="og:price:currency"]')?.getAttribute('content') ??
-      null;
+function parseShopifyVariantPrice(raw: string | number): number | null {
+  if (typeof raw === 'number') {
+    return raw >= 1000 ? raw / 100 : raw;
+  }
+  const text = String(raw).trim();
+  if (!text) return null;
+  if (text.includes('.')) {
+    const dollars = parseFloat(text.replace(/,/g, ''));
+    return Number.isFinite(dollars) ? dollars : null;
+  }
+  const cents = parseInt(text, 10);
+  return Number.isFinite(cents) ? cents / 100 : null;
+}
 
-    const scriptEl = document.querySelector<HTMLScriptElement>(
-      'script[type="application/json"][data-product-json], #ProductJson-product-template, script[id*="ProductJson"]'
-    );
+/** Shopify public product JSON — prices in dollars as strings (e.g. "396.00"). */
+export async function fetchShopifyProductJson(
+  productUrl: string
+): Promise<ShopifyProductData | null> {
+  const handle = productHandleFromUrl(productUrl);
+  if (!handle) return null;
 
-    let data: any = null;
-    if (scriptEl?.textContent) {
-      try {
-        data = JSON.parse(scriptEl.textContent);
-      } catch {
-        /* ignore */
-      }
-    }
+  const origin = new URL(productUrl).origin.replace(/\/$/, '');
+  const res = await fetch(
+    `${origin}/products/${handle}.json?currency=USD`,
+    { headers: { Accept: 'application/json', 'Accept-Language': 'en-US' } }
+  );
+  if (!res.ok) return null;
 
-    if (!data && win.meta?.product) {
-      data = win.meta.product;
-    }
+  const body = (await res.json()) as { product?: Record<string, unknown> };
+  const data = body.product;
+  if (!data) return null;
 
-    if (!data) return null;
+  const variants = (data.variants as Array<Record<string, unknown>>) ?? [];
+  const v0 =
+    variants.find((v) => v.available !== false) ?? variants[0];
+  if (!v0) return null;
 
-    const variants: any[] = data.variants ?? [];
-    const v0 = variants.find((v) => v.available !== false) ?? variants[0];
-    if (!v0?.price && v0?.price !== 0) return null;
+  const variantCurrency = String(
+    v0.price_currency ?? 'USD'
+  ).toUpperCase();
+  if (variantCurrency !== 'USD') return null;
 
-    // Shopify stores price in cents (integer)
-    const cents = typeof v0.price === 'string' ? parseInt(v0.price, 10) : v0.price;
-    const priceUsd = cents / 100;
+  const priceUsd = parseShopifyVariantPrice(
+    v0.price as string | number
+  );
+  if (priceUsd == null) return null;
 
-    const compareCents = v0.compare_at_price
-      ? typeof v0.compare_at_price === 'string'
-        ? parseInt(v0.compare_at_price, 10)
-        : v0.compare_at_price
-      : null;
+  const compareUsd = v0.compare_at_price
+    ? parseShopifyVariantPrice(v0.compare_at_price as string | number)
+    : null;
 
-    const images: string[] = [];
-    const pushImg = (src: string | null | undefined) => {
-      if (!src || typeof src !== 'string') return;
-      const full = src.startsWith('//') ? `https:${src}` : src;
-      if (full.startsWith('http') && !images.includes(full)) images.push(full);
-    };
+  const images: string[] = [];
+  const imgList = (data.images as Array<{ src?: string }>) ?? [];
+  for (const img of imgList) {
+    if (img.src && !images.includes(img.src)) images.push(img.src);
+  }
 
-    if (Array.isArray(data.media)) {
-      data.media.forEach((m: any) => {
-        pushImg(m?.preview_image?.src ?? m?.src ?? m?.preview?.image?.src);
-      });
-    }
-    if (Array.isArray(data.images)) {
-      data.images.forEach((img: string) => pushImg(img));
-    }
-    pushImg(data.featured_image);
-    if (data.featured_media?.preview?.image?.src) {
-      pushImg(data.featured_media.preview.image.src);
-    }
-
-    const options: string[] = data.options ?? [];
-    const baseCents = cents;
-    const variantList = variants.slice(0, 20).map((v: any) => {
-      const vc = typeof v.price === 'string' ? parseInt(v.price, 10) : v.price;
-      return {
-        name:  options[0] ?? 'Option',
-        value: v.option1 ?? v.title ?? 'Default',
-        price: vc ? vc / 100 - baseCents / 100 : 0,
-      };
-    });
-
-    const descHtml = data.description ?? data.body_html ?? null;
-    const description = descHtml
-      ? String(descHtml).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000)
-      : null;
-
-    const tagsRaw = data.tags ?? '';
-    const tags =
-      typeof tagsRaw === 'string'
-        ? tagsRaw.split(',').map((t: string) => t.trim()).filter(Boolean)
-        : Array.isArray(tagsRaw)
-          ? tagsRaw.map(String)
-          : [];
-
+  const options = (data.options as Array<{ name?: string }>) ?? [];
+  const variantList: RawVariant[] = variants.slice(0, 20).map((v) => {
+    const vp = parseShopifyVariantPrice(v.price as string | number) ?? priceUsd;
     return {
-      name:         data.title ?? null,
-      description,
-      priceUsd,
-      compareAtUsd: compareCents ? compareCents / 100 : null,
-      currency:     (activeCurrency ?? 'USD').toUpperCase(),
-      sku:          v0.sku ?? data.id?.toString() ?? null,
-      productType:  data.type ? String(data.type).trim() : null,
-      tags,
-      images,
-      variants:     variantList,
-      inStock:      v0.available !== false,
+      name:  options[0]?.name ?? 'Option',
+      value: String(v.option1 ?? v.title ?? 'Default'),
+      price: vp - priceUsd,
     };
   });
+
+  const descHtml = (data.body_html ?? data.description) as string | undefined;
+  const description = descHtml
+    ? descHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000)
+    : null;
+
+  const tagsRaw = data.tags;
+  const tags =
+    typeof tagsRaw === 'string'
+      ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean)
+      : Array.isArray(tagsRaw)
+        ? tagsRaw.map(String)
+        : [];
+
+  return {
+    name:         String(data.title ?? ''),
+    description,
+    priceUsd,
+    compareAtUsd: compareUsd,
+    currency:     'USD',
+    sku:          v0.sku != null ? String(v0.sku) : null,
+    productType:  data.product_type ? String(data.product_type).trim() : null,
+    tags,
+    images,
+    variants:     variantList,
+    inStock:      v0.available !== false,
+  };
+}
+
+/**
+ * DOM / inline JSON fallback (prices in cents in theme scripts).
+ */
+export async function extractShopifyProduct(page: Page): Promise<ShopifyProductData | null> {
+  return runInPage<ShopifyProductData | null>(
+    page,
+    loadPageScript('extract-shopify-product.js')
+  );
 }
 
 /** Collection page title + description (for category rows in Supabase) */
@@ -242,74 +243,10 @@ export async function extractCollectionPageMeta(
  * Product gallery from DOM (thumbnails, media carousel) — supplements JSON.
  */
 export async function extractProductGalleryImages(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const selectors = [
-      'media-gallery img',
-      '.product__media-item img',
-      '.product__media img',
-      '.product-media img',
-      '.product-media-container img',
-      '[data-product-media] img',
-      '.product-gallery img',
-      '.product-single__photo img',
-      '.product__modal-opener img',
-      '.thumbnail-list img',
-      '.product__thumbs img',
-      'slideshow-component img',
-      '.product-image-main img',
-    ];
-
-    const found: string[] = [];
-    const push = (src: string | null | undefined) => {
-      if (!src) return;
-      let url = src;
-      if (url.startsWith('//')) url = `https:${url}`;
-      if (!url.startsWith('http')) return;
-      if (/logo|icon|sprite|badge/i.test(url)) return;
-      const size = url.match(/_(\d+)x(\d+)/i);
-      if (size && parseInt(size[1], 10) < 80) return;
-      if (!found.includes(url)) found.push(url);
-    };
-
-    for (const sel of selectors) {
-      document.querySelectorAll<HTMLImageElement>(sel).forEach((img) => {
-        push(
-          img.getAttribute('data-src') ??
-            img.getAttribute('data-srcset')?.split(/\s+/)[0] ??
-            img.currentSrc ??
-            img.src
-        );
-      });
-    }
-
-    document.querySelectorAll<HTMLAnchorElement>('a[href*="/cdn/shop/products/"]').forEach((a) => {
-      push(a.href);
-    });
-
-    return found;
-  });
+  return runInPage<string[]>(page, loadPageScript('extract-gallery-images.js'));
 }
 
 /** Breadcrumb / product-type fallback on PDP */
 export async function extractProductCategoryFromPage(page: Page): Promise<string | null> {
-  return page.evaluate(() => {
-    const crumbs = Array.from(
-      document.querySelectorAll(
-        'nav[aria-label*="breadcrumb"] a, .breadcrumb a, [class*="breadcrumb"] a'
-      )
-    )
-      .map((a) => a.textContent?.trim() ?? '')
-      .filter((t) => t && !/home|shop|products?/i.test(t));
-
-    if (crumbs.length >= 1) {
-      const last = crumbs[crumbs.length - 1];
-      if (last && last.length > 1 && last.length < 80) return last;
-    }
-
-    const typeEl = document.querySelector('[class*="product-type"], .product__type');
-    const typeText = typeEl?.textContent?.trim();
-    if (typeText && typeText.length > 1) return typeText;
-
-    return null;
-  });
+  return runInPage<string | null>(page, loadPageScript('extract-product-category.js'));
 }

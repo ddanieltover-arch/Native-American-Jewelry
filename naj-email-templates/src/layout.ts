@@ -1,4 +1,4 @@
-import { BRAND } from './brand';
+import { BRAND, logoUrl, siteUrl } from './brand';
 import { escapeHtml } from './utils';
 
 export type EmailLayoutOptions = {
@@ -33,13 +33,18 @@ export function emailLayout({ preheader, title, bodyHtml }: EmailLayoutOptions):
       <td align="center">
         <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${BRAND.colors.white};border:1px solid ${BRAND.colors.bone};">
           <tr>
-            <td style="background:${BRAND.colors.obsidian};padding:28px 32px;">
-              <p style="margin:0;font-size:11px;letter-spacing:0.28em;text-transform:uppercase;color:${BRAND.colors.turquoise};font-family:Arial,sans-serif;">
-                ${BRAND.tagline}
+            <td style="background:${BRAND.colors.parchment};padding:28px 32px 20px;text-align:center;border-bottom:1px solid ${BRAND.colors.bone};">
+              <a href="${escapeHtml(siteUrl())}" style="text-decoration:none;">
+                <img
+                  src="${escapeHtml(logoUrl())}"
+                  alt="${escapeHtml(BRAND.name)}"
+                  width="240"
+                  style="display:block;margin:0 auto;max-width:240px;width:100%;height:auto;border:0;"
+                />
+              </a>
+              <p style="margin:14px 0 0;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:${BRAND.colors.sienna};font-family:Arial,sans-serif;">
+                ${escapeHtml(BRAND.tagline)}
               </p>
-              <h1 style="margin:8px 0 0;font-size:26px;font-weight:300;color:${BRAND.colors.parchment};letter-spacing:0.04em;">
-                ${BRAND.name}
-              </h1>
             </td>
           </tr>
           <tr>

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: '%s | Native American Jewelry',
   },
   description:
-    'Authentic Native American jewelry handcrafted by Navajo, Zuni, Hopi, and Pueblo artisans. Turquoise, sterling silver, and traditional designs. Free shipping on US orders over $75.',
+    'Authentic Native American jewelry handcrafted by Navajo, Zuni, Hopi, and Pueblo artisans. Turquoise, sterling silver, and traditional designs. Free shipping on US orders over $400.',
   keywords: [
     'native american jewelry',
     'navajo jewelry',
@@ -26,6 +26,18 @@ export const metadata: Metadata = {
     title: 'Native American Jewelry — Authentic Handcrafted Pieces',
     description:
       'Authentic handcrafted jewelry by Navajo, Zuni, Hopi & Pueblo artisans.',
+    images: [
+      {
+        url: '/images/hero-main.png',
+        width: 1920,
+        height: 1080,
+        alt: 'Native American Jewelry — handcrafted heritage and turquoise collection',
+      },
+    ],
+  },
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
   },
   robots: { index: true, follow: true },
   metadataBase: new URL(

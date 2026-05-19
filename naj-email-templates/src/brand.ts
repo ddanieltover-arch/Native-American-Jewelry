@@ -1,6 +1,7 @@
 export const BRAND = {
   name: 'Native American Jewelry',
-  tagline: 'Authentic · Handcrafted · Traditional',
+  tagline: 'Handcrafted · Heritage · Spirit',
+  logoPath: '/logo.png',
   colors: {
     obsidian: '#0e0c0a',
     parchment: '#faf6ef',
@@ -19,4 +20,9 @@ export function siteUrl(): string {
     process.env.SITE_URL ??
     'https://nativeamericanjewelry.com'
   ).replace(/\/$/, '');
+}
+
+/** Public logo URL for email clients (host on storefront). */
+export function logoUrl(): string {
+  return `${siteUrl()}${BRAND.logoPath}`;
 }

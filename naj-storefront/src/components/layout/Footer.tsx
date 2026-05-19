@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Instagram, Facebook, Youtube } from 'lucide-react';
+import Logo from '@/components/brand/Logo';
 
 const FOOTER_LINKS = {
   Shop: [
@@ -11,12 +12,15 @@ const FOOTER_LINKS = {
     { label: 'Concho Belts',  href: '/shop?category=concho-belts' },
   ],
   'Customer Care': [
-    { label: 'How to Order',      href: '/how-to-order' },
-    { label: 'Payment Methods',   href: '/payment-methods' },
-    { label: 'Shipping & Returns',href: '/shipping' },
-    { label: 'Jewelry Care',      href: '/jewelry-care' },
-    { label: 'Contact Us',        href: '/contact' },
-    { label: 'FAQ',               href: '/faq' },
+    { label: 'How to Order',       href: '/how-to-order' },
+    { label: 'Payment Methods',    href: '/payment-methods' },
+    { label: 'Shipping & Returns', href: '/shipping' },
+    { label: 'Jewelry Care',       href: '/jewelry-care' },
+    { label: 'Contact Us',         href: '/contact' },
+    { label: 'FAQ',                href: '/faq' },
+    { label: 'Layaway Policy',     href: '/layaway' },
+    { label: 'Promotion Policy',   href: '/promotions' },
+    { label: 'Wholesale Terms',    href: '/wholesale' },
   ],
   About: [
     { label: 'Our Story',           href: '/about' },
@@ -35,15 +39,7 @@ export default function Footer() {
       <div className="border-b border-white/10 py-10 px-4 md:px-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
-            <p
-              className="text-2xl font-light tracking-wide text-brand-bone"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              Native American Jewelry
-            </p>
-            <p className="text-xs tracking-[0.2em] text-brand-sand mt-1 uppercase">
-              Authentic · Handcrafted · Traditional
-            </p>
+            <Logo height={64} href="/" variant="on-dark" />
           </div>
 
           {/* Newsletter */}

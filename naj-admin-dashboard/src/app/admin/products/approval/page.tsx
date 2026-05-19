@@ -50,6 +50,7 @@ export default function ApprovalQueuePage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<AdminProduct | null>(null);
   const [rejectTarget, setRejectTarget] = useState<AdminProduct | null>(null);
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<string | null>(null);
   const [counts, setCounts] = useState({ pending: 0, active: 0, archived: 0 });
@@ -89,7 +90,24 @@ export default function ApprovalQueuePage() {
     return () => clearTimeout(t);
   }, [loadProducts, search]);
 
+  useEffect(() => {
+    setBulkSelected(new Set());
+  }, [tab]);
+
   const filtered = products;
+  const pendingIds = tab === 'pending' ? filtered.map((p) => p.id) : [];
+  const allPendingSelected =
+    pendingIds.length > 0 && pendingIds.every((id) => bulkSelected.has(id));
+  const somePendingSelected =
+    pendingIds.some((id) => bulkSelected.has(id)) && !allPendingSelected;
+
+  const toggleSelectAll = () => {
+    if (allPendingSelected) {
+      setBulkSelected(new Set());
+    } else {
+      setBulkSelected(new Set(pendingIds));
+    }
+  };
 
   const approve = async (product: AdminProduct) => {
     setLoading(product.id);
@@ -117,6 +135,11 @@ export default function ApprovalQueuePage() {
       await adminPost('/api/admin/products/reject', { productId: product.id });
       toast.success(`"${product.name}" rejected and archived`);
       setRejectTarget(null);
+      setBulkSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
       if (selected?.id === product.id) setSelected(null);
       await loadProducts();
       await loadCounts();
@@ -128,12 +151,12 @@ export default function ApprovalQueuePage() {
   };
 
   const bulkApprove = async () => {
-    setLoading('bulk');
+    const ids = Array.from(bulkSelected);
+    if (!ids.length) return;
+    setLoading('bulk-approve');
     try {
-      await adminPost('/api/admin/products/approve', {
-        productIds: Array.from(bulkSelected),
-      });
-      toast.success(`${bulkSelected.size} products approved`);
+      await adminPost('/api/admin/products/approve', { productIds: ids });
+      toast.success(`${ids.length} product${ids.length === 1 ? '' : 's'} approved`);
       setBulkSelected(new Set());
       await loadProducts();
       await loadCounts();
@@ -144,24 +167,29 @@ export default function ApprovalQueuePage() {
     }
   };
 
+  const bulkReject = async () => {
+    const ids = Array.from(bulkSelected);
+    if (!ids.length) return;
+    setLoading('bulk-reject');
+    try {
+      await adminPost('/api/admin/products/reject', { productIds: ids });
+      toast.success(`${ids.length} product${ids.length === 1 ? '' : 's'} rejected`);
+      setBulkSelected(new Set());
+      setBulkRejectOpen(false);
+      await loadProducts();
+      await loadCounts();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Bulk reject failed');
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="Product Approval Queue"
         subtitle="Review scraped products before they go live on the storefront"
-        action={
-          bulkSelected.size > 0 ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{bulkSelected.size} selected</span>
-              <Button size="sm" loading={loading === 'bulk'} onClick={bulkApprove}>
-                <CheckCircle size={14} /> Approve All
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setBulkSelected(new Set())}>
-                Clear
-              </Button>
-            </div>
-          ) : undefined
-        }
       />
 
       <Card>
@@ -190,6 +218,53 @@ export default function ApprovalQueuePage() {
           />
         ) : (
           <div className="space-y-3">
+            {tab === 'pending' && filtered.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-300"
+                    checked={allPendingSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = somePendingSelected;
+                    }}
+                    onChange={toggleSelectAll}
+                  />
+                  Select all on this page ({filtered.length})
+                </label>
+
+                {bulkSelected.size > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      {bulkSelected.size} selected
+                    </span>
+                    <Button
+                      size="sm"
+                      loading={loading === 'bulk-approve'}
+                      onClick={bulkApprove}
+                    >
+                      <CheckCircle size={14} /> Approve selected
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      loading={loading === 'bulk-reject'}
+                      onClick={() => setBulkRejectOpen(true)}
+                    >
+                      <XCircle size={14} /> Reject selected
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setBulkSelected(new Set())}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {filtered.map((product) => (
               <div
                 key={product.id}
@@ -381,9 +456,19 @@ export default function ApprovalQueuePage() {
         title="Reject Product"
         message={`Are you sure you want to reject "${rejectTarget?.name}"? It will be archived and not shown on the storefront.`}
         confirmLabel="Reject Product"
-        loading={!!loading && loading !== 'bulk'}
+        loading={!!loading && !String(loading).startsWith('bulk')}
         onConfirm={() => rejectTarget && reject(rejectTarget)}
         onCancel={() => setRejectTarget(null)}
+      />
+
+      <ConfirmModal
+        open={bulkRejectOpen}
+        title="Reject selected products"
+        message={`Reject ${bulkSelected.size} product${bulkSelected.size === 1 ? '' : 's'}? They will be archived and hidden from the storefront.`}
+        confirmLabel={`Reject ${bulkSelected.size}`}
+        loading={loading === 'bulk-reject'}
+        onConfirm={bulkReject}
+        onCancel={() => setBulkRejectOpen(false)}
       />
     </div>
   );

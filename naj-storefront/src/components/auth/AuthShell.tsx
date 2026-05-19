@@ -12,7 +12,7 @@ export default function AuthShell({ title, subtitle, children, footer }: AuthShe
   return (
     <div className="max-w-md mx-auto px-4 py-16">
       <h1
-        className="text-heading-lg text-brand-obsidian mb-2"
+        className="text-heading-lg text-brand-obsidian mb-2 text-center"
         style={{ fontFamily: 'var(--font-display)' }}
       >
         {title}

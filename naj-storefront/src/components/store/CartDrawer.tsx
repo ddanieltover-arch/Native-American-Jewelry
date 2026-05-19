@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { X, Plus, Minus, Trash2, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCartStore } from '@/lib/store';
 import { cn, formatPrice, getProductGradient } from '@/lib/utils';
+import { FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
 
 export default function CartDrawer() {
   const { items, isDrawerOpen, closeDrawer, removeItem, updateQuantity, total } = useCartStore();
@@ -185,23 +186,23 @@ export default function CartDrawer() {
         {items.length > 0 && (
           <div className="border-t border-brand-bone px-6 py-5 space-y-4 bg-brand-parchment">
             {/* Free shipping progress */}
-            {subtotal < 75 && (
+            {subtotal < FREE_SHIPPING_THRESHOLD_US && (
               <div>
                 <p className="text-xs text-brand-sienna mb-1.5" style={{ fontFamily: 'var(--font-body)' }}>
                   Add{' '}
-                  <span className="font-medium text-brand-obsidian">{formatPrice(75 - subtotal)}</span>{' '}
-                  more for free shipping
+                  <span className="font-medium text-brand-obsidian">{formatPrice(FREE_SHIPPING_THRESHOLD_US - subtotal)}</span>{' '}
+                  more for free US shipping (orders over ${FREE_SHIPPING_THRESHOLD_US})
                 </p>
                 <div className="w-full h-1 bg-brand-bone rounded-full overflow-hidden">
                   <div
                     className="h-full bg-brand-turquoise rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min((subtotal / 75) * 100, 100)}%` }}
+                    style={{ width: `${Math.min((subtotal / FREE_SHIPPING_THRESHOLD_US) * 100, 100)}%` }}
                   />
                 </div>
               </div>
             )}
 
-            {subtotal >= 75 && (
+            {subtotal >= FREE_SHIPPING_THRESHOLD_US && (
               <p className="text-xs text-brand-turquoise font-medium" style={{ fontFamily: 'var(--font-body)' }}>
                 ✓ You qualify for free shipping!
               </p>
