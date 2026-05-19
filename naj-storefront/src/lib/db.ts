@@ -14,11 +14,14 @@ function getClient(): SupabaseClient {
 }
 
 function getAdminClient(): SupabaseClient {
-  return createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('Supabase admin client not configured (SUPABASE_SERVICE_ROLE_KEY)');
+  }
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
 // ══════════════════════════════════════════════════════════
@@ -205,6 +208,59 @@ export async function getShippingRateById(id: string) {
     .eq('id', id)
     .single();
   return data;
+}
+
+// ══════════════════════════════════════════════════════════
+// NEWSLETTER & CONTACT
+// ══════════════════════════════════════════════════════════
+
+export function isSupabaseAdminConfigured(): boolean {
+  return Boolean(
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+      (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)
+  );
+}
+
+export async function subscribeNewsletter(
+  email: string,
+  source = 'footer'
+): Promise<{ ok: true; duplicate?: boolean }> {
+  const supabase = getAdminClient();
+  const normalized = email.trim().toLowerCase();
+
+  const { error } = await supabase.from('newsletter_subscribers').insert({
+    email: normalized,
+    source,
+  });
+
+  if (error?.code === '23505') {
+    return { ok: true, duplicate: true };
+  }
+  if (error) {
+    throw new Error(`subscribeNewsletter: ${error.message}`);
+  }
+  return { ok: true };
+}
+
+export async function saveContactSubmission(payload: {
+  name: string;
+  email: string;
+  subject?: string;
+  message: string;
+}): Promise<{ ok: true }> {
+  const supabase = getAdminClient();
+
+  const { error } = await supabase.from('contact_submissions').insert({
+    name: payload.name.trim(),
+    email: payload.email.trim().toLowerCase(),
+    subject: payload.subject?.trim() || null,
+    message: payload.message.trim(),
+  });
+
+  if (error) {
+    throw new Error(`saveContactSubmission: ${error.message}`);
+  }
+  return { ok: true };
 }
 
 // ══════════════════════════════════════════════════════════

@@ -31,16 +31,19 @@ export async function sendTransactionalEmail(
   }
 
   const resend = new Resend(apiKey);
+  const to = Array.isArray(options.to) ? options.to : [options.to.trim()];
+
   const { data, error } = await resend.emails.send({
     from: options.from ?? getFromAddress(),
-    to: options.to,
-    reply_to: options.replyTo,
+    to,
+    reply_to: options.replyTo?.trim(),
     subject: options.subject,
     html: options.html,
     text: options.text,
   });
 
   if (error) {
+    console.error('[resend]', error.name ?? 'send_failed', error.message);
     return { ok: false, error: error.message };
   }
 
