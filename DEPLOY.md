@@ -29,7 +29,9 @@ Copy from `.env.all-services.example` and set in each host:
 | Admin | `naj-admin-dashboard/.env.local` |
 | Scraper | `naj-scraper-service/.env` |
 
-Required: `SUPABASE_*`, `RESEND_API_KEY`, `FROM_EMAIL`
+Required: `SUPABASE_*`, `RESEND_API_KEY`, `FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL`
+
+Transactional emails (shared `naj-email-templates/`): order confirmation, payment instructions, payment verified/failed/refunded, shipped/delivered. Configure payment handles: `PAYMENT_CHIME_HANDLE`, `PAYMENT_CASHAPP_TAG`, `PAYMENT_ZELLE_EMAIL`, etc. See `naj-email-templates/README.md`.
 
 ## 3. Vercel — Storefront
 
@@ -104,8 +106,11 @@ Prerequisites: migrations `001`–`003` applied; `naj-scraper-service/.env` and 
 
 5. Storefront `/shop` shows only **active** products (approved SKU visible; pending hidden).
 
-Optional one-shot test (requires image worker running for photos):
+Optional small batch test (USD prices, inline images, $150+ only):
 ```bash
 cd naj-scraper-service
-npm run scrape:now -- https://hippiecowgirlcouture.com/collections/necklaces
+# First 30 SKUs only — set in .env: MAX_PRODUCTS_PER_RUN=30
+npm run scrape:now
 ```
+
+Scraper forces `?currency=USD`, reads Shopify JSON (not ₦ DOM text), dedupes by product handle, and sets `SCRAPE_INLINE=true` for images on `scrape:now`.

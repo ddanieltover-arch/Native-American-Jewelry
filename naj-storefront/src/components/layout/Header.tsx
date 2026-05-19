@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ShoppingBag, Search, Heart, Menu, X, ChevronDown } from 'lucide-react';
+import { ShoppingBag, Search, Heart, Menu, User, ChevronDown } from 'lucide-react';
 import { useCartStore, useUIStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { CATEGORIES } from '@/lib/mock-data';
@@ -105,6 +105,14 @@ export default function Header() {
             aria-label="Wishlist"
           >
             <Heart size={19} />
+          </Link>
+
+          <Link
+            href="/account"
+            className="p-2 text-brand-obsidian hover:text-brand-turquoise transition-colors hidden sm:block"
+            aria-label="Account"
+          >
+            <User size={19} />
           </Link>
 
           <button

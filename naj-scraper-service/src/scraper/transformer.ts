@@ -1,13 +1,16 @@
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { applyDiscount, uniqueSlug, normalizeText } from '../utils/helpers';
+import { applyDiscount, makeSlug, normalizeText } from '../utils/helpers';
+import { mergeProductImageUrls } from '../utils/product-images';
+import { isPlausibleUsdPrice } from '../utils/price';
+import { productHandleFromUrl } from './shopify';
 import type { RawProduct, TransformedProduct } from '../types';
 
 // ─── Transform a single raw product ───────────────────────
 export function transformProduct(raw: RawProduct): TransformedProduct | null {
   // ── Price filter: skip anything below MIN_PRICE ──────────
-  if (!raw.price || raw.price < config.MIN_PRICE_FILTER) {
-    logger.debug('Filtered out — price below minimum', {
+  if (!raw.price || !isPlausibleUsdPrice(raw.price)) {
+    logger.debug('Filtered out — price below minimum or invalid USD', {
       name:  raw.name,
       price: raw.price,
       min:   config.MIN_PRICE_FILTER,
@@ -48,12 +51,8 @@ export function transformProduct(raw: RawProduct): TransformedProduct | null {
     .filter((t) => t.length > 1 && t.length < 60)
     .slice(0, 15);
 
-  // ── Normalize image URLs ──────────────────────────────────
-  const imageUrls = raw.images
-    .filter((url) => url && url.startsWith('http'))
-    .map((url) => cleanImageUrl(url))
-    .filter(Boolean)
-    .slice(0, 8) as string[];
+  // ── Gallery images (max 2 by default) ─────────────────────
+  const imageUrls = mergeProductImageUrls(raw.images);
 
   logger.debug('Transformed product', {
     name,
@@ -63,9 +62,12 @@ export function transformProduct(raw: RawProduct): TransformedProduct | null {
     variants:      variants.length,
   });
 
+  const handle = productHandleFromUrl(raw.sourceUrl);
+  const slug   = handle ? makeSlug(handle) : makeSlug(name);
+
   return {
     name,
-    slug:          uniqueSlug(name),
+    slug,
     description:   raw.description ? cleanDescription(raw.description) : null,
     source_price:  raw.price,
     price:         discountedPrice,
@@ -78,28 +80,6 @@ export function transformProduct(raw: RawProduct): TransformedProduct | null {
     image_urls:    imageUrls,
     variants,
   };
-}
-
-// ─── Clean image URL (remove query params, get full-size) ─
-function cleanImageUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-
-    // Shopify CDN: remove size suffix like _300x300, _1024x1024
-    parsed.pathname = parsed.pathname.replace(/_\d+x\d*\.[a-z]+(\.[a-z]+)?$/, (match) => {
-      const ext = match.split('.').pop();
-      return `.${ext}`;
-    });
-
-    // Remove common tracking params
-    ['v', 'width', 'height', 'crop', 'quality', 'format'].forEach((p) =>
-      parsed.searchParams.delete(p)
-    );
-
-    return parsed.href;
-  } catch {
-    return null;
-  }
 }
 
 // ─── Clean description text ───────────────────────────────

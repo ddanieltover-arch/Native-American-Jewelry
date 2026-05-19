@@ -101,7 +101,7 @@ export default function MobileMenu() {
             </p>
             {[
               { label: 'My Account',   href: '/account' },
-              { label: 'My Orders',    href: '/account/orders' },
+              { label: 'My Orders',    href: '/account?tab=orders' },
               { label: 'My Wishlist',  href: '/account/wishlist' },
             ].map(({ label, href }) => (
               <Link

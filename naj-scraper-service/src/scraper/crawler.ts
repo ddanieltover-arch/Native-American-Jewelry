@@ -1,14 +1,33 @@
 import pLimit from 'p-limit';
 import { createStealthContext, createPage, safeGoto, scrollToBottom, closeBrowser } from './browser';
-import { extractProductData, extractProductLinks, extractCatalogLinks, extractShopifyVariants } from './extractor';
+import { extractProductData, extractProductLinks, extractCatalogLinks } from './extractor';
+import {
+  collectionHandleFromUrl,
+  collectionSlugToDisplayName,
+  extractCollectionPageMeta,
+  isCollectionUrl,
+  normalizeShopifyProductUrl,
+  withUsdCurrency,
+  type ShopifyCollectionMeta,
+} from './shopify';
 import { transformProduct } from './transformer';
-import { saveProduct, saveVariants, createScrapeLog, completeScrapeLog, resolveCategoryId } from '../db/supabase';
+import {
+  saveProduct,
+  saveVariants,
+  saveProductImage,
+  createScrapeLog,
+  completeScrapeLog,
+  resolveCategoryId,
+  syncCollectionCategories,
+} from '../db/supabase';
 import { imageQueue } from '../queues';
 import { processImage } from '../image/processor';
 import { logger, createJobLogger } from '../utils/logger';
 import { throttleDelay, generateJobId } from '../utils/helpers';
 import { config } from '../config';
 import type { RawProduct, ScrapeError, ScrapeResult, TransformedProduct } from '../types';
+
+type ProductCategoryRef = { name: string; slug: string };
 
 // ─── Main crawl entry point ───────────────────────────────
 export async function crawlSite(
@@ -30,22 +49,41 @@ export async function crawlSite(
   const context = await createStealthContext();
 
   try {
+    // Seed Shopify session with USD (avoids ₦ / regional pricing in product JSON)
+    const seedPage = await createPage(context);
+    await safeGoto(seedPage, withUsdCurrency(targetUrl));
+    await seedPage.close();
+
     // ── Step 1: Discover catalog pages ──────────────────────
     const catalogUrls = await discoverCatalogUrls(context, targetUrl, jobId);
     jLog.info(`Found ${catalogUrls.length} catalog pages`);
 
-    // hippiecowgirlcouture.com lists ~1573 SKUs under /collections/all (Shopify paginated)
+    const collectionUrls = [
+      ...new Set(
+        catalogUrls.filter((u) => isCollectionUrl(u) && !u.includes('/collections/all'))
+      ),
+    ];
+
+    // ── Step 2: Sync Shopify collections → categories + map products to collections
+    const { categoryByProductUrl, collectionsSynced } = await buildProductCategoryMap(
+      context,
+      targetUrl,
+      collectionUrls,
+      jobId
+    );
+    jLog.info(`Synced ${collectionsSynced} categories; mapped ${categoryByProductUrl.size} product→category links`);
+
     const allUrls = [
       ...new Set([
         `${targetUrl}/collections/all`,
         `${targetUrl}/shop`,
-        ...catalogUrls.filter((u) => !u.endsWith('/collections/all')),
+        ...collectionUrls,
       ]),
     ];
 
-    // ── Step 2: Collect all product URLs from each catalog page
-    const allProductUrls = new Set<string>();
-    const pageLimiter = pLimit(1); // one catalog page at a time (polite)
+    // ── Step 3: Collect all product URLs (ensure full catalog coverage)
+    const allProductUrls = new Set<string>(categoryByProductUrl.keys());
+    const pageLimiter = pLimit(1);
 
     await Promise.all(
       allUrls.map((catUrl) =>
@@ -65,14 +103,17 @@ export async function crawlSite(
       jLog.info(`Capped to MAX_PRODUCTS_PER_RUN=${config.MAX_PRODUCTS_PER_RUN}`);
     }
 
-    // ── Step 3: Scrape each product page ────────────────────
+    // ── Step 4: Scrape each product page ────────────────────
     const productLimiter = pLimit(config.SCRAPE_CONCURRENCY);
 
     await Promise.all(
       productUrls.map((productUrl) =>
         productLimiter(async () => {
           try {
-            const result = await scrapeProductPage(context, productUrl, jobId);
+            const categoryRef = categoryByProductUrl.get(
+              normalizeShopifyProductUrl(productUrl, targetUrl) ?? productUrl
+            );
+            const result = await scrapeProductPage(context, productUrl, jobId, categoryRef);
 
             if (result === 'filtered') {
               totalFiltered++;
@@ -131,6 +172,81 @@ export async function crawlSite(
   });
 
   return result;
+}
+
+/**
+ * Visit each /collections/{slug} page, upsert categories in Supabase,
+ * and record which products belong to which collection.
+ */
+async function buildProductCategoryMap(
+  context:         any,
+  targetUrl:       string,
+  collectionUrls:  string[],
+  jobId:           string
+): Promise<{ categoryByProductUrl: Map<string, ProductCategoryRef>; collectionsSynced: number }> {
+  const jLog = createJobLogger(jobId);
+  const categoryByProductUrl = new Map<string, ProductCategoryRef>();
+  const collectionMetas: ShopifyCollectionMeta[] = [];
+
+  const pageLimiter = pLimit(1);
+
+  await Promise.all(
+    collectionUrls.map((collectionUrl) =>
+      pageLimiter(async () => {
+        const slug = collectionHandleFromUrl(collectionUrl);
+        if (!slug) return;
+
+        const page = await createPage(context);
+        try {
+          const ok = await safeGoto(page, withUsdCurrency(collectionUrl));
+          if (!ok) return;
+
+          const meta =
+            (await extractCollectionPageMeta(page, collectionUrl)) ?? {
+              slug,
+              name:        collectionSlugToDisplayName(slug),
+              description: null,
+              sourceUrl:   collectionUrl.split('?')[0],
+            };
+
+          collectionMetas.push(meta);
+
+          const productLinks = await collectShopifyCollectionProducts(
+            context,
+            meta.sourceUrl,
+            jobId
+          );
+
+          for (const productUrl of productLinks) {
+            const canonical =
+              normalizeShopifyProductUrl(productUrl, targetUrl) ?? productUrl;
+            if (!categoryByProductUrl.has(canonical)) {
+              categoryByProductUrl.set(canonical, {
+                name: meta.name,
+                slug: meta.slug,
+              });
+            }
+          }
+
+          jLog.debug(`Collection "${meta.name}": ${productLinks.length} products`);
+        } finally {
+          await page.close();
+        }
+        await throttleDelay();
+      })
+    )
+  );
+
+  const uniqueMetas = [...new Map(collectionMetas.map((c) => [c.slug, c])).values()];
+  const collectionsSynced = await syncCollectionCategories(
+    uniqueMetas.map((c) => ({
+      name:        c.name,
+      slug:        c.slug,
+      description: c.description,
+    }))
+  );
+
+  return { categoryByProductUrl, collectionsSynced };
 }
 
 // ─── Discover category / collection URLs ─────────────────
@@ -229,36 +345,34 @@ async function collectProductUrlsFromPage(
 
 // ─── Scrape a single product page ────────────────────────
 async function scrapeProductPage(
-  context:    any,
-  url:        string,
-  jobId:      string
+  context:      any,
+  url:          string,
+  jobId:        string,
+  categoryRef?: ProductCategoryRef
 ): Promise<{ saved: boolean; imageJobsQueued: number } | 'filtered' | 'error'> {
   const jLog = createJobLogger(jobId);
   const page = await createPage(context);
 
+  const canonical = normalizeShopifyProductUrl(url, config.TARGET_URL) ?? url;
+  const fetchUrl  = withUsdCurrency(canonical);
+
   try {
-    const ok = await safeGoto(page, url);
+    const ok = await safeGoto(page, fetchUrl);
     if (!ok) return 'error';
 
-    // Wait for content
     await page.waitForLoadState('domcontentloaded');
 
-    // Extract raw data
-    const raw = await extractProductData(page, url);
+    const raw = await extractProductData(page, canonical, categoryRef?.name);
     if (!raw) return 'error';
-
-    // Try to enhance with Shopify variants if available
-    const shopifyVariants = await extractShopifyVariants(page);
-    if (shopifyVariants.length > raw.variants.length) {
-      raw.variants = shopifyVariants;
-    }
 
     // Transform (applies price filter + discount)
     const transformed = transformProduct(raw);
     if (!transformed) return 'filtered';
 
     // Save to Supabase
-    const categoryId = await resolveCategoryId(transformed.category_name);
+    const categoryId = await resolveCategoryId(transformed.category_name, {
+      collectionSlug: categoryRef?.slug,
+    });
     const productId = await saveProduct({
       name:         transformed.name,
       slug:         transformed.slug,
@@ -281,7 +395,11 @@ async function scrapeProductPage(
       await saveVariants(productId, transformed.variants);
     }
 
-    const inlineImages = process.env.SCRAPE_INLINE === 'true';
+    const inlineImages = process.env.SCRAPE_INLINE !== 'false';
+    if (!transformed.image_urls.length) {
+      jLog.warn('Product saved without gallery images', { name: transformed.name, url: canonical });
+    }
+
     let imageJobsQueued = 0;
     for (let i = 0; i < transformed.image_urls.length; i++) {
       const imageJob = {
@@ -293,7 +411,16 @@ async function scrapeProductPage(
       };
 
       if (inlineImages) {
-        await processImage(imageJob);
+        const result = await processImage(imageJob);
+        if (!result) {
+          await saveProductImage({
+            product_id: productId,
+            url:        transformed.image_urls[i],
+            alt:        transformed.name,
+            is_primary: i === 0,
+            position:   i,
+          });
+        }
       } else {
         await imageQueue.add('process-image', imageJob, {
           attempts: 5,
@@ -304,9 +431,10 @@ async function scrapeProductPage(
     }
 
     jLog.info('Product saved', {
-      name:    transformed.name,
-      price:   transformed.price,
-      images:  imageJobsQueued,
+      name:     transformed.name,
+      price:    transformed.price,
+      category: transformed.category_name ?? categoryRef?.name,
+      images:   imageJobsQueued,
     });
 
     return { saved: true, imageJobsQueued };

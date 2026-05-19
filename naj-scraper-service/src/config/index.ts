@@ -16,6 +16,8 @@ const ConfigSchema = z.object({
   DISCOUNT_RATE:        z.coerce.number().min(0).max(1).default(0.05),
   /** Cap PDPs per run (0 = unlimited). Use 50–150 for manual batches on Render. */
   MAX_PRODUCTS_PER_RUN: z.coerce.number().default(0),
+  /** Gallery images saved per product (primary + secondary) */
+  MAX_IMAGES_PER_PRODUCT: z.coerce.number().min(1).max(8).default(2),
 
   // Proxy (optional)
   PROXY_SERVER:   z.string().optional(),

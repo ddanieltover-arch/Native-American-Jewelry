@@ -5,6 +5,12 @@
  *        tsx src/scraper/run-now.ts --url https://example.com
  */
 import 'dotenv/config';
+
+// Process images during scrape:now (no Redis worker required)
+if (!process.env.SCRAPE_INLINE) {
+  process.env.SCRAPE_INLINE = 'true';
+}
+
 import { crawlSite } from './crawler';
 import { closeBrowser } from './browser';
 import { generateJobId } from '../utils/helpers';

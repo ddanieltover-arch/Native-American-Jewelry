@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -16,6 +18,14 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
+  },
+  webpack: (config) => {
+    config.resolve.alias['@naj/emails'] = path.join(__dirname, '..', 'naj-email-templates', 'src');
+    config.resolve.modules = [
+      path.join(__dirname, '..', 'naj-email-templates', 'node_modules'),
+      ...(config.resolve.modules ?? ['node_modules']),
+    ];
+    return config;
   },
 };
 

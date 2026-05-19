@@ -48,6 +48,10 @@ Price logic lives in `naj-scraper-service/src/scraper/transformer.ts`:
 - Skip if `raw.price < MIN_PRICE_FILTER` (default 150).
 - Persist `source_price` = original scraped price, `price` = after 5% discount.
 
+**Categories:** Shopify `/collections/{slug}` pages are synced to `categories`, then each product is mapped to the collection it was discovered under (fallback: Shopify `product.type`, breadcrumb, tags).
+
+**Images:** Up to **2** gallery images per product (`MAX_IMAGES_PER_PRODUCT=2`) from Shopify JSON + PDP gallery DOM; processed inline on `scrape:now` (`SCRAPE_INLINE=true`).
+
 ---
 
 ## When this skill triggers

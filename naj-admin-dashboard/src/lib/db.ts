@@ -352,6 +352,8 @@ export async function adminVerifyPayment(
     .from('orders')
     .update({ status: orderStatus })
     .eq('id', payment.order_id);
+
+  return payment.order_id as string;
 }
 
 // ══════════════════════════════════════════════════════════

@@ -87,6 +87,7 @@ interface WishlistStore {
   productIds: string[];
   toggle: (productId: string) => void;
   has: (productId: string) => boolean;
+  replace: (productIds: string[]) => void;
   clear: () => void;
 }
 
@@ -103,6 +104,7 @@ export const useWishlistStore = create<WishlistStore>()(
         })),
 
       has: (productId) => get().productIds.includes(productId),
+      replace: (productIds: string[]) => set({ productIds }),
       clear: () => set({ productIds: [] }),
     }),
     {

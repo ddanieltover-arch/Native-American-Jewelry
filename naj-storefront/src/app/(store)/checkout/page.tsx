@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCartStore } from '@/lib/store';
+import { createClient } from '@/lib/supabase-client';
 import { cn, formatPrice, PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS } from '@/lib/utils';
 import type { PaymentMethod, ShippingRate } from '@/types';
 
@@ -55,6 +56,25 @@ export default function CheckoutPage() {
         if (rates[0]) setShippingRateId(rates[0].id);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('first_name, last_name, phone')
+        .eq('id', user.id)
+        .maybeSingle();
+      setForm((f) => ({
+        ...f,
+        email: user.email ?? f.email,
+        firstName: customer?.first_name ?? f.firstName,
+        lastName: customer?.last_name ?? f.lastName,
+        phone: customer?.phone ?? f.phone,
+      }));
+    });
   }, []);
 
   const subtotal = total();

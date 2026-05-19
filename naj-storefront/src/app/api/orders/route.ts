@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { Resend } from 'resend';
+import {
+  renderOrderConfirmationEmail,
+  sendTransactionalEmail,
+  type PaymentMethod,
+} from '@naj/emails';
 import { createOrder } from '@/lib/db';
+import { createServerClientInstance } from '@/lib/supabase-server';
+import { ensureCustomerProfile } from '@/lib/auth/customer';
 
 const OrderSchema = z.object({
   email: z.string().email(),
@@ -33,51 +39,53 @@ const OrderSchema = z.object({
   notes: z.string().optional(),
 });
 
-const PAYMENT_INSTRUCTIONS: Record<string, string> = {
-  chime: 'Send payment to our Chime account. Details will be emailed to you.',
-  cashapp: 'Send to our Cash App. Include your order number in the note.',
-  apple_cash: 'Send via Apple Cash. We will provide the number via email.',
-  zelle: 'Send to orders@nativeamericanjewelry.com via Zelle.',
-  bank_transfer: 'Bank wire details will follow in a separate email.',
-};
-
-function buildOrderConfirmEmail(
-  orderNumber: string,
-  method: string,
-  total: number
-): string {
-  return `
-    <div style="font-family:Georgia,serif;max-width:560px;margin:40px auto">
-      <h2>Thank you! Your order is confirmed.</h2>
-      <p><strong>Order #:</strong> ${orderNumber}</p>
-      <p><strong>Total:</strong> $${total.toFixed(2)}</p>
-      <p><strong>Payment (${method}):</strong><br>${PAYMENT_INSTRUCTIONS[method] ?? ''}</p>
-      <p>Upload payment proof from your account after sending payment.</p>
-    </div>
-  `;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const parsed = OrderSchema.parse(body);
 
-    const result = await createOrder(parsed);
+    let customerId: string | undefined;
+    const supabase = await createServerClientInstance();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      await ensureCustomerProfile(supabase, user);
+      customerId = user.id;
+    }
 
-    if (process.env.RESEND_API_KEY) {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      resend.emails
-        .send({
-          from: process.env.FROM_EMAIL ?? 'orders@nativeamericanjewelry.com',
-          to: parsed.email,
-          subject: `Order Confirmed: ${result.orderNumber}`,
-          html: buildOrderConfirmEmail(
-            result.orderNumber,
-            parsed.paymentMethod,
-            result.total
-          ),
-        })
-        .catch(() => null);
+    const result = await createOrder({ ...parsed, customerId });
+
+    const customerName = `${parsed.firstName} ${parsed.lastName}`.trim();
+    const lineItems = parsed.items.map((item) => ({
+      name: item.productName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.unitPrice * item.quantity,
+    }));
+
+    const { subject, html, text } = renderOrderConfirmationEmail({
+      customerName,
+      orderNumber: result.orderNumber,
+      orderId: result.orderId,
+      items: lineItems,
+      subtotal: result.subtotal,
+      shippingCost: result.shippingCost,
+      discountAmount: result.discountAmount,
+      total: result.total,
+      paymentMethod: parsed.paymentMethod as PaymentMethod,
+      shippingMethod: result.shippingMethod,
+    });
+
+    const emailResult = await sendTransactionalEmail({
+      to: parsed.email,
+      subject,
+      html,
+      text,
+    });
+
+    if (!emailResult.ok && !('skipped' in emailResult && emailResult.skipped)) {
+      console.error('Order confirmation email failed:', emailResult);
     }
 
     return NextResponse.json(

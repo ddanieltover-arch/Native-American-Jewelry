@@ -268,6 +268,7 @@ export interface CreateOrderPayload {
   }>;
   couponCode?:   string;
   notes?:        string;
+  customerId?:   string;
 }
 
 function generateOrderNumber(): string {
@@ -304,16 +305,25 @@ export async function createOrder(payload: CreateOrderPayload) {
 
   const total = subtotal + shippingCost - discountAmount;
 
-  // Find or create customer
-  let customerId: string | null = null;
-  const { data: existingCustomer } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('email', payload.email)
-    .single();
+  let customerId: string | null = payload.customerId ?? null;
+  if (!customerId) {
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('email', payload.email)
+      .maybeSingle();
+    if (existingCustomer) customerId = existingCustomer.id;
+  }
 
-  if (existingCustomer) {
-    customerId = existingCustomer.id;
+  if (customerId) {
+    await supabase
+      .from('customers')
+      .update({
+        first_name: payload.firstName,
+        last_name:  payload.lastName,
+        phone:      payload.phone ?? null,
+      })
+      .eq('id', customerId);
   }
 
   // Create order
@@ -382,7 +392,15 @@ export async function createOrder(payload: CreateOrderPayload) {
     }
   }
 
-  return { orderNumber, orderId: order.id, total };
+  return {
+    orderNumber,
+    orderId: order.id,
+    total,
+    subtotal,
+    shippingCost,
+    discountAmount,
+    shippingMethod: shippingRate.label,
+  };
 }
 
 export async function getCustomerOrders(customerId: string) {

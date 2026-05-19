@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { config } from '../config';
+import { parsePriceFromText } from './price';
 
 // ─── Async delay ──────────────────────────────────────────
 export function delay(ms: number): Promise<void> {
@@ -42,12 +43,9 @@ export function applyDiscount(sourcePrice: number, rate = config.DISCOUNT_RATE):
   return parseFloat((sourcePrice * (1 - rate)).toFixed(2));
 }
 
-// ─── Parse price string → number ─────────────────────────
+// ─── Parse price string → number (USD-safe; rejects ₦/€/£) ─
 export function parsePrice(raw: string | null | undefined): number | null {
-  if (!raw) return null;
-  const cleaned = raw.replace(/[^\d.]/g, '');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? null : num;
+  return parsePriceFromText(raw);
 }
 
 // ─── Deduplicate array by key ─────────────────────────────

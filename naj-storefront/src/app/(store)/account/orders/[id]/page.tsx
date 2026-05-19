@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase-client';
 import { formatPrice, ORDER_STATUS_LABELS } from '@/lib/utils';
 
-export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function OrderDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const [order, setOrder] = useState<Record<string, unknown> | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -60,18 +60,20 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       <ul className="border border-brand-bone divide-y mb-6">
         {items.map((item, i) => (
           <li key={i} className="flex justify-between p-4 text-sm">
-            <span>{item.product_name} × {item.quantity}</span>
+            <span>
+              {item.product_name} × {item.quantity}
+            </span>
             <span>{formatPrice(item.subtotal)}</span>
           </li>
         ))}
       </ul>
-      <p className="text-lg font-medium mb-8">Total: {formatPrice(order.total as number)}</p>
+      <p className="font-medium mb-6">Total: {formatPrice(order.total as number)}</p>
 
-      {payment?.status === 'pending' && (
-        <label className="btn-primary inline-flex items-center gap-2 cursor-pointer">
-          <Upload size={16} />
+      {payment && (payment as { status: string }).status === 'pending' && (
+        <label className="btn-primary text-sm inline-flex items-center gap-2 cursor-pointer">
+          <Upload size={14} />
           {uploading ? 'Uploading…' : 'Upload payment proof'}
-          <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
+          <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
         </label>
       )}
     </div>

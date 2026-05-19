@@ -1,37 +1,93 @@
 import { Page } from 'playwright';
 import { logger } from '../utils/logger';
-import { parsePrice, normalizeText, stripHtml, resolveUrl } from '../utils/helpers';
+import { parsePrice, normalizeText, stripHtml } from '../utils/helpers';
+import { resolveUsdPrice, isPlausibleUsdPrice } from '../utils/price';
+import { mergeProductImageUrls } from '../utils/product-images';
+import {
+  extractShopifyProduct,
+  extractProductGalleryImages,
+  extractProductCategoryFromPage,
+  normalizeShopifyProductUrl,
+  isAllowedProductUrl,
+} from './shopify';
 import type { RawProduct, RawVariant } from '../types';
 
 // ─── Main extraction entry point ──────────────────────────
 export async function extractProductData(
   page: Page,
-  url:  string
+  url:  string,
+  categoryHint?: string | null
 ): Promise<RawProduct | null> {
   try {
-    // Strategy 1: JSON-LD structured data (most reliable)
-    const jsonLd = await extractJsonLd(page);
-    if (jsonLd) {
-      logger.debug('Extracted via JSON-LD', { url });
-      return jsonLd;
+    const canonicalUrl = normalizeShopifyProductUrl(page.url()) ?? normalizeShopifyProductUrl(url) ?? url;
+
+    const shopify = await extractShopifyProduct(page);
+    const jsonLd  = await extractJsonLd(page);
+    const ogDom   = await extractOpenGraph(page, url);
+
+    const price = resolveUsdPrice({
+      shopifyUsd:      shopify?.priceUsd ?? null,
+      shopifyCurrency: shopify?.currency ?? null,
+      jsonLdPrice:     jsonLd?.price ?? null,
+      jsonLdCurrency:  jsonLd?.currency ?? null,
+      domPriceText:    ogDom?.domPriceText ?? null,
+    });
+
+    if (price == null || !isPlausibleUsdPrice(price)) {
+      logger.debug('Filtered — no valid USD price', {
+        url:      canonicalUrl,
+        shopify:  shopify?.priceUsd,
+        currency: shopify?.currency,
+      });
+      return null;
     }
 
-    // Strategy 2: OpenGraph + DOM hybrid
-    const og = await extractOpenGraph(page, url);
-    if (og) {
-      logger.debug('Extracted via OG+DOM', { url });
-      return og;
-    }
+    const name =
+      normalizeText(shopify?.name ?? jsonLd?.name ?? ogDom?.name ?? '');
+    if (!name || name.length < 3) return null;
 
-    // Strategy 3: Pure DOM (most fragile, last resort)
-    const dom = await extractFromDom(page, url);
-    if (dom) {
-      logger.debug('Extracted via DOM fallback', { url });
-      return dom;
-    }
+    const galleryDom = await extractProductGalleryImages(page);
+    const images = mergeProductImageUrls([
+      ...(shopify?.images ?? []),
+      ...galleryDom,
+      ...(jsonLd?.images ?? []),
+      ...(ogDom?.images ?? []),
+    ]);
 
-    logger.warn('All extraction strategies failed', { url });
-    return null;
+    const variants =
+      shopify?.variants?.length ? shopify.variants : (jsonLd?.variants ?? []);
+
+    const inStock = shopify?.inStock ?? jsonLd?.inStock ?? ogDom?.inStock ?? true;
+
+    const breadcrumbCategory = await extractProductCategoryFromPage(page);
+    const categoryName =
+      categoryHint?.trim() ||
+      shopify?.productType?.trim() ||
+      breadcrumbCategory ||
+      jsonLd?.categoryName ||
+      inferCategoryFromTags(shopify?.tags ?? jsonLd?.tags ?? []) ||
+      null;
+
+    logger.debug('Extracted product (USD)', {
+      url:      canonicalUrl,
+      price,
+      name,
+      category: categoryName,
+      images:   images.length,
+    });
+
+    return {
+      name,
+      description:  shopify?.description ?? jsonLd?.description ?? ogDom?.description ?? null,
+      price,
+      images,
+      variants,
+      sku:          shopify?.sku ?? jsonLd?.sku ?? null,
+      tags:         [...(shopify?.tags ?? []), ...(jsonLd?.tags ?? [])],
+      inStock,
+      sourceUrl:    canonicalUrl,
+      categoryName,
+    };
   } catch (err) {
     logger.error('Extraction error', { url, err });
     return null;
@@ -39,7 +95,9 @@ export async function extractProductData(
 }
 
 // ─── Strategy 1: JSON-LD ──────────────────────────────────
-async function extractJsonLd(page: Page): Promise<RawProduct | null> {
+async function extractJsonLd(
+  page: Page
+): Promise<(RawProduct & { currency?: string | null }) | null> {
   try {
     const raw = await page.evaluate(() => {
       const scripts = Array.from(
@@ -64,10 +122,12 @@ async function extractJsonLd(page: Page): Promise<RawProduct | null> {
     let price: number | null = null;
     let inStock = true;
 
+    let currency: string | null = null;
     if (raw.offers) {
       const offer = Array.isArray(raw.offers) ? raw.offers[0] : raw.offers;
-      price   = parsePrice(offer.price?.toString());
-      inStock = offer.availability?.includes('InStock') ?? true;
+      price    = parsePrice(offer.price?.toString());
+      currency = offer.priceCurrency?.toString()?.toUpperCase() ?? null;
+      inStock  = offer.availability?.includes('InStock') ?? true;
     }
 
     if (!price) return null;
@@ -106,6 +166,7 @@ async function extractJsonLd(page: Page): Promise<RawProduct | null> {
       name:         normalizeText(raw.name ?? ''),
       description:  raw.description ? stripHtml(raw.description) : null,
       price,
+      currency,
       images,
       variants,
       sku:          raw.sku ?? raw.mpn ?? null,
@@ -120,7 +181,13 @@ async function extractJsonLd(page: Page): Promise<RawProduct | null> {
 }
 
 // ─── Strategy 2: OpenGraph + DOM ─────────────────────────
-async function extractOpenGraph(page: Page, url: string): Promise<RawProduct | null> {
+async function extractOpenGraph(page: Page, url: string): Promise<{
+  name: string | null;
+  description: string | null;
+  images: string[];
+  domPriceText: string | null;
+  inStock: boolean;
+} | null> {
   try {
     const data = await page.evaluate(() => {
       const getMeta = (property: string) =>
@@ -163,24 +230,18 @@ async function extractOpenGraph(page: Page, url: string): Promise<RawProduct | n
       };
     });
 
-    const name  = data.domTitle ?? data.ogTitle;
-    const price = parsePrice(data.ogPrice) ?? parsePrice(data.domPrice);
-
-    if (!name || !price) return null;
+    const name = data.domTitle ?? data.ogTitle;
+    if (!name) return null;
 
     const images = data.ogImages.length ? data.ogImages : (data.ogImage ? [data.ogImage] : []);
+    const domPriceText = data.domPrice ?? data.ogPrice ?? null;
 
     return {
       name:         normalizeText(name),
       description:  data.domDesc ? stripHtml(data.domDesc) : (data.ogDesc ? stripHtml(data.ogDesc) : null),
-      price,
       images,
-      variants:     [],
-      sku:          null,
-      tags:         [],
+      domPriceText,
       inStock:      data.inStock,
-      sourceUrl:    url,
-      categoryName: null,
     };
   } catch {
     return null;
@@ -287,14 +348,46 @@ export async function extractProductLinks(
 ): Promise<string[]> {
   const links = await page.evaluate((base: string) => {
     const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>(
-      'a[href*="/products/"], a[href*="/product/"]'
+      'a[href*="/products/"]'
     ));
     return [...new Set(anchors.map((a) => {
       try { return new URL(a.href, base).href; } catch { return ''; }
     }))].filter(Boolean);
   }, baseUrl);
 
-  return links;
+  const origin = new URL(baseUrl).origin;
+  const normalized = new Set<string>();
+
+  for (const link of links) {
+    const canon = normalizeShopifyProductUrl(link, origin);
+    if (canon && isAllowedProductUrl(canon, origin)) {
+      normalized.add(canon);
+    }
+  }
+
+  return [...normalized];
+}
+
+/** Map Shopify product tags to NAJ category names when they match known jewelry types */
+function inferCategoryFromTags(tags: string[]): string | null {
+  const joined = tags.join(' ').toLowerCase();
+  const rules: Array<[RegExp, string]> = [
+    [/necklace|squash blossom|lariat|choker/i, 'Necklaces'],
+    [/\bring\b|cuff ring|band\b/i, 'Rings'],
+    [/bracelet|bangle/i, 'Bracelets'],
+    [/earring|hoop|stud/i, 'Earrings'],
+    [/concho belt|belt\b/i, 'Concho Belts'],
+    [/\bcuff\b/i, 'Cuffs'],
+    [/pendant|pin\b/i, 'Pendants'],
+    [/bag|purse|clutch/i, 'Bags'],
+    [/hat\b|cap\b/i, 'Hats'],
+    [/jacket|coat|vest|apparel/i, 'Apparel'],
+    [/strand|heishi/i, 'Strands'],
+  ];
+  for (const [re, label] of rules) {
+    if (re.test(joined)) return label;
+  }
+  return null;
 }
 
 // ─── Extract category/collection navigation links ─────────

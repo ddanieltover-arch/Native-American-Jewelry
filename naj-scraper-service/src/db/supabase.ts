@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { makeSlug } from '../utils/helpers';
+import { productHandleFromUrl } from '../scraper/shopify';
 import type { ScrapeLog, ScrapeError } from '../types';
 
 // ─── Singleton client ─────────────────────────────────────
@@ -73,32 +74,48 @@ export async function completeScrapeLog(
 
 // ─── Resolve or create category by scraped name ─────────────
 export async function resolveCategoryId(
-  categoryName: string | null | undefined
+  categoryName: string | null | undefined,
+  options?: { description?: string | null; collectionSlug?: string }
 ): Promise<string | null> {
   if (!categoryName?.trim()) return null;
 
   const name = categoryName.trim();
-  const slug = makeSlug(name);
+  const slug = options?.collectionSlug
+    ? makeSlug(options.collectionSlug)
+    : makeSlug(name);
   if (!slug) return null;
 
   const supabase = getSupabase();
 
   const { data: existing } = await supabase
     .from('categories')
-    .select('id')
+    .select('id, description')
     .eq('slug', slug)
     .maybeSingle();
 
-  if (existing?.id) return existing.id;
+  if (existing?.id) {
+    if (options?.description && !existing.description) {
+      await supabase
+        .from('categories')
+        .update({ description: options.description })
+        .eq('id', existing.id);
+    }
+    return existing.id;
+  }
 
   const { data: created, error } = await supabase
     .from('categories')
-    .insert({ name, slug, featured: false, sort_order: 99 })
+    .insert({
+      name,
+      slug,
+      description: options?.description ?? null,
+      featured:    false,
+      sort_order:  99,
+    })
     .select('id')
     .single();
 
   if (error) {
-    // Race: another worker may have inserted the same slug
     const { data: retry } = await supabase
       .from('categories')
       .select('id')
@@ -109,7 +126,23 @@ export async function resolveCategoryId(
     return null;
   }
 
+  logger.info('Category synced', { name, slug });
   return created?.id ?? null;
+}
+
+/** Upsert many Shopify collections as categories before product import */
+export async function syncCollectionCategories(
+  collections: Array<{ name: string; slug: string; description?: string | null }>
+): Promise<number> {
+  let synced = 0;
+  for (const col of collections) {
+    const id = await resolveCategoryId(col.name, {
+      collectionSlug: col.slug,
+      description:    col.description,
+    });
+    if (id) synced++;
+  }
+  return synced;
 }
 
 // ─── Product save ─────────────────────────────────────────
@@ -128,16 +161,44 @@ export async function saveProduct(product: {
 }): Promise<string | null> {
   const supabase = getSupabase();
 
-  // Check for duplicate by source_url
-  const { data: existing } = await supabase
+  // Duplicate by exact source_url
+  const { data: existingByUrl } = await supabase
     .from('products')
     .select('id')
     .eq('source_url', product.source_url)
-    .single();
+    .maybeSingle();
 
-  if (existing?.id) {
-    logger.debug('Product already exists, skipping', { sourceUrl: product.source_url });
+  if (existingByUrl?.id) {
+    logger.debug('Product already exists (source_url)', { sourceUrl: product.source_url });
     return null;
+  }
+
+  // Duplicate by Shopify handle (blocks copy-1 / copy-2 URLs for same item)
+  const handle = productHandleFromUrl(product.source_url);
+  if (handle) {
+    const { data: existingByHandle } = await supabase
+      .from('products')
+      .select('id')
+      .ilike('source_url', `%/products/${handle}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingByHandle?.id) {
+      logger.debug('Product already exists (handle)', { handle, sourceUrl: product.source_url });
+      return null;
+    }
+
+    // Stable slug from handle — skip if slug taken by another product
+    const { data: existingSlug } = await supabase
+      .from('products')
+      .select('id')
+      .eq('slug', product.slug)
+      .maybeSingle();
+
+    if (existingSlug?.id) {
+      logger.debug('Product slug already exists', { slug: product.slug });
+      return null;
+    }
   }
 
   const { data, error } = await supabase

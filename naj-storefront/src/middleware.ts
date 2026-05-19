@@ -1,6 +1,17 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const PUBLIC_ACCOUNT_PATHS = [
+  '/account/login',
+  '/account/signup',
+  '/account/forgot-password',
+  '/account/reset-password',
+];
+
+function isPublicAccountPath(pathname: string): boolean {
+  return PUBLIC_ACCOUNT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -13,9 +24,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
@@ -25,12 +34,23 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith('/account') && !pathname.startsWith('/account/login')) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  if (
+    user &&
+    (pathname === '/account/login' || pathname === '/account/signup')
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/account';
+    url.search = '';
+    return NextResponse.redirect(url);
+  }
+
+  if (pathname.startsWith('/account') && !isPublicAccountPath(pathname)) {
     if (!user) {
       const url = request.nextUrl.clone();
       url.pathname = '/account/login';
@@ -45,5 +65,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/account/:path*', '/api/:path*'],
+  matcher: ['/account/:path*', '/auth/:path*', '/api/orders/:path*'],
 };

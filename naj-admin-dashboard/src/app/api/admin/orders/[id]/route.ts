@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminGetOrder, adminUpdateOrder } from '@/lib/db';
 import { verifyAdminToken } from '@/lib/auth';
+import { notifyShippingUpdateEmail } from '@/lib/notify-customer';
 
 export async function GET(
   req: NextRequest,
@@ -33,7 +34,36 @@ export async function PATCH(
   if (body.notes !== undefined) updates.notes = body.notes;
   if (body.shipping_method !== undefined) updates.shipping_method = body.shipping_method;
 
+  let previousStatus: string | undefined;
+  if (body.status !== undefined) {
+    try {
+      const before = await adminGetOrder(params.id);
+      previousStatus = before.status;
+    } catch {
+      /* ignore */
+    }
+  }
+
   await adminUpdateOrder(params.id, updates, admin.id);
   const order = await adminGetOrder(params.id);
+
+  const notify = body.notifyCustomer !== false;
+  if (
+    notify &&
+    body.status &&
+    body.status !== previousStatus &&
+    (body.status === 'shipped' || body.status === 'delivered')
+  ) {
+    try {
+      await notifyShippingUpdateEmail(params.id, body.status, {
+        trackingNumber: body.tracking_number,
+        trackingUrl: body.tracking_url,
+        estimatedDelivery: body.estimated_delivery,
+      });
+    } catch (err) {
+      console.error('Shipping update email failed:', err);
+    }
+  }
+
   return NextResponse.json({ data: order });
 }
