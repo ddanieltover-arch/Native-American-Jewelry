@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Instagram, Facebook, Youtube } from 'lucide-react';
 import Logo from '@/components/brand/Logo';
+import NewsletterForm from '@/components/layout/NewsletterForm';
 
 const FOOTER_LINKS = {
   Shop: [
@@ -42,22 +43,7 @@ export default function Footer() {
             <Logo height={64} href="/" variant="on-dark" />
           </div>
 
-          {/* Newsletter */}
-          <form className="flex w-full max-w-md gap-0">
-            <input
-              type="email"
-              placeholder="Your email address"
-              className="flex-1 bg-white/10 border border-white/20 px-4 py-3 text-sm text-brand-bone placeholder:text-brand-sand/60 focus:outline-none focus:border-brand-turquoise transition-colors"
-              style={{ fontFamily: 'var(--font-body)' }}
-            />
-            <button
-              type="submit"
-              className="bg-brand-turquoise text-white px-5 py-3 text-xs font-medium tracking-widest uppercase hover:bg-brand-teal transition-colors whitespace-nowrap"
-              style={{ fontFamily: 'var(--font-body)', letterSpacing: '0.12em' }}
-            >
-              Subscribe
-            </button>
-          </form>
+          <NewsletterForm />
         </div>
       </div>
 

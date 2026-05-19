@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   renderOrderConfirmationEmail,
-  sendTransactionalEmail,
+  renderNewOrderAdminEmail,
   type PaymentMethod,
 } from '@naj/emails';
 import { createOrder } from '@/lib/db';
+import { getAdminEmail, sendEmailSafe, sendTransactionalEmail } from '@/lib/email';
 import { createServerClientInstance } from '@/lib/supabase-server';
 import { ensureCustomerProfile } from '@/lib/auth/customer';
 
@@ -77,16 +78,38 @@ export async function POST(req: NextRequest) {
       shippingMethod: result.shippingMethod,
     });
 
-    const emailResult = await sendTransactionalEmail({
-      to: parsed.email,
-      subject,
-      html,
-      text,
+    await sendEmailSafe('order-confirmation-customer', () =>
+      sendTransactionalEmail({
+        to: parsed.email,
+        subject,
+        html,
+        text,
+      })
+    );
+
+    const adminEmail = renderNewOrderAdminEmail({
+      orderNumber: result.orderNumber,
+      orderId: result.orderId,
+      customerName,
+      customerEmail: parsed.email,
+      customerPhone: parsed.phone,
+      items: lineItems,
+      subtotal: result.subtotal,
+      shippingCost: result.shippingCost,
+      discountAmount: result.discountAmount,
+      total: result.total,
+      paymentMethod: parsed.paymentMethod as PaymentMethod,
+      shippingMethod: result.shippingMethod,
     });
 
-    if (!emailResult.ok && !('skipped' in emailResult && emailResult.skipped)) {
-      console.error('Order confirmation email failed:', emailResult);
-    }
+    await sendEmailSafe('order-confirmation-admin', () =>
+      sendTransactionalEmail({
+        to: getAdminEmail(),
+        subject: adminEmail.subject,
+        html: adminEmail.html,
+        text: adminEmail.text,
+      })
+    );
 
     return NextResponse.json(
       {

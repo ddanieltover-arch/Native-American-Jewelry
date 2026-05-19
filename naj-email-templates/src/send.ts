@@ -7,6 +7,7 @@ export type SendEmailOptions = {
   html: string;
   text?: string;
   from?: string;
+  replyTo?: string;
   resendApiKey?: string;
 };
 
@@ -33,6 +34,7 @@ export async function sendTransactionalEmail(
   const { data, error } = await resend.emails.send({
     from: options.from ?? getFromAddress(),
     to: options.to,
+    reply_to: options.replyTo,
     subject: options.subject,
     html: options.html,
     text: options.text,

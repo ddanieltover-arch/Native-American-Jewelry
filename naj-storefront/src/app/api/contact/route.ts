@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { Resend } from 'resend';
+import {
+  renderContactAdminEmail,
+  renderContactConfirmationEmail,
+} from '@naj/emails';
+import { getAdminEmail, isEmailConfigured, sendEmailSafe, sendTransactionalEmail } from '@/lib/email';
 
 const ContactSchema = z.object({
   name: z.string().min(1).max(120),
@@ -13,43 +17,47 @@ export async function POST(req: NextRequest) {
   try {
     const body = ContactSchema.parse(await req.json());
 
-    if (!process.env.RESEND_API_KEY) {
+    if (!isEmailConfigured()) {
       return NextResponse.json(
-        { error: 'Email service not configured' },
+        { error: 'Email service not configured. Please email us directly.' },
         { status: 503 }
       );
     }
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const to = process.env.ADMIN_EMAIL ?? process.env.FROM_EMAIL ?? 'orders@nativeamericanjewelry.com';
-    const from = process.env.FROM_EMAIL ?? 'orders@nativeamericanjewelry.com';
+    const admin = getAdminEmail();
+    const adminEmail = renderContactAdminEmail(body);
+    const confirmEmail = renderContactConfirmationEmail({ name: body.name });
 
-    await resend.emails.send({
-      from,
-      to,
-      reply_to: body.email,
-      subject: body.subject
-        ? `[Contact] ${body.subject}`
-        : `[Contact] Message from ${body.name}`,
-      html: `
-        <h2>Contact form submission</h2>
-        <p><strong>Name:</strong> ${body.name}</p>
-        <p><strong>Email:</strong> ${body.email}</p>
-        <p><strong>Message:</strong></p>
-        <p style="white-space:pre-wrap">${body.message}</p>
-      `,
-    });
+    const [adminResult, customerResult] = await Promise.all([
+      sendEmailSafe('contact-admin', () =>
+        sendTransactionalEmail({
+          to: admin,
+          replyTo: body.email,
+          subject: adminEmail.subject,
+          html: adminEmail.html,
+          text: adminEmail.text,
+        })
+      ),
+      sendEmailSafe('contact-confirmation', () =>
+        sendTransactionalEmail({
+          to: body.email,
+          subject: confirmEmail.subject,
+          html: confirmEmail.html,
+          text: confirmEmail.text,
+        })
+      ),
+    ]);
 
-    await resend.emails.send({
-      from,
-      to: body.email,
-      subject: 'We received your message — Native American Jewelry',
-      html: `
-        <p>Hi ${body.name},</p>
-        <p>Thank you for reaching out. We received your message and will respond within 1–2 business days.</p>
-        <p style="color:#666;font-size:12px">This is an automated confirmation.</p>
-      `,
-    });
+    if (!adminResult.ok && !('skipped' in adminResult && adminResult.skipped)) {
+      return NextResponse.json(
+        { error: 'Failed to send message. Please try again or email us directly.' },
+        { status: 500 }
+      );
+    }
+
+    if (!customerResult.ok && !('skipped' in customerResult && customerResult.skipped)) {
+      console.warn('Contact admin sent but customer confirmation failed');
+    }
 
     return NextResponse.json({ data: { sent: true } });
   } catch (err) {

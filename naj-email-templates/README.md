@@ -17,7 +17,10 @@ Set on Vercel (storefront + admin):
 
 ```env
 FROM_EMAIL=orders@nativeamericanjewelry.com
+ADMIN_EMAIL=admin@nativeamericanjewelry.com
 RESEND_API_KEY=re_...
+
+Set these on **both** Vercel projects (storefront + admin). Storefront sends contact, newsletter, and order emails. Admin sends payment and shipping updates to customers.
 PAYMENT_CHIME_HANDLE=$YourChime
 PAYMENT_CASHAPP_TAG=$YourCashApp
 PAYMENT_APPLE_CASH_PHONE=+1-555-555-5555

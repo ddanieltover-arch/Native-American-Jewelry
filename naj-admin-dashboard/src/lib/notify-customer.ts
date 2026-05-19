@@ -36,7 +36,11 @@ export async function notifyPaymentStatusEmail(
     adminNote,
   });
 
-  await sendTransactionalEmail({ to, subject, html, text });
+  const result = await sendTransactionalEmail({ to, subject, html, text });
+  if (!result.ok && !('skipped' in result && result.skipped)) {
+    console.error('Payment status email failed:', 'error' in result ? result.error : result);
+    throw new Error('error' in result ? result.error : 'Email send failed');
+  }
 }
 
 export async function notifyShippingUpdateEmail(
@@ -62,7 +66,11 @@ export async function notifyShippingUpdateEmail(
     estimatedDelivery: extras?.estimatedDelivery,
   });
 
-  await sendTransactionalEmail({ to, subject, html, text });
+  const result = await sendTransactionalEmail({ to, subject, html, text });
+  if (!result.ok && !('skipped' in result && result.skipped)) {
+    console.error('Shipping update email failed:', 'error' in result ? result.error : result);
+    throw new Error('error' in result ? result.error : 'Email send failed');
+  }
 }
 
 export async function notifyPaymentInstructionsEmail(orderId: string): Promise<void> {
@@ -78,5 +86,9 @@ export async function notifyPaymentInstructionsEmail(orderId: string): Promise<v
     orderId: order.id,
   });
 
-  await sendTransactionalEmail({ to, subject, html, text });
+  const result = await sendTransactionalEmail({ to, subject, html, text });
+  if (!result.ok && !('skipped' in result && result.skipped)) {
+    console.error('Payment instructions email failed:', 'error' in result ? result.error : result);
+    throw new Error('error' in result ? result.error : 'Email send failed');
+  }
 }
