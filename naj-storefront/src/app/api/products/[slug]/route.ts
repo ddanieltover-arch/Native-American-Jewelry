@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getProductBySlug } from '@/lib/db';
 import { mapDbProduct } from '@/lib/product-mapper';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   _: NextRequest,

@@ -114,7 +114,7 @@ Mobile:
 - Bottom-center
 
 Notification Content:
-- “Someone in [European Country] just purchased [Product Name]”
+- “Someone in [USA State] just purchased [Product Name]”
 
 Requirements:
 - Randomized intervals

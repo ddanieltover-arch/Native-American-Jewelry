@@ -3,6 +3,8 @@ import { getProductBySlug, getRelatedProducts } from '@/lib/db';
 import { mapDbProduct, mapDbProducts } from '@/lib/product-mapper';
 import ProductDetail from '@/components/store/ProductDetail';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: Promise<{ slug: string }>;
 }
