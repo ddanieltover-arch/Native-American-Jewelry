@@ -31,6 +31,14 @@
   --border-heavy: rgba(61, 44, 30, 0.25);
 
   --header-height: 88px;
+
+  /* Mobile bottom nav + floating actions (chat, back-to-top) */
+  --mobile-nav-height: 4.5rem;
+  --floating-gap: 0.75rem;
+  --floating-bottom-mobile: calc(
+    var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + var(--floating-gap)
+  );
+  --floating-bottom-desktop: 1.5rem;
 }
 
 @layer base {
@@ -210,6 +218,10 @@
 }
 
 @layer utilities {
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -222,4 +234,21 @@
   .delay-300 { animation-delay: 300ms; }
   .delay-375 { animation-delay: 375ms; }
   .delay-450 { animation-delay: 450ms; }
+}
+
+/* Smartsupp live chat — brand position; clear mobile bottom nav */
+@media (max-width: 767px) {
+  #smartsupp-widget-container,
+  div[id^='smartsupp-widget'] {
+    bottom: var(--floating-bottom-mobile) !important;
+    right: 1rem !important;
+  }
+}
+
+@media (min-width: 768px) {
+  #smartsupp-widget-container,
+  div[id^='smartsupp-widget'] {
+    bottom: var(--floating-bottom-desktop) !important;
+    right: 1.5rem !important;
+  }
 }

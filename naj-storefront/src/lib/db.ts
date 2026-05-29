@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { qualifiesForFreeStandardShipping } from '@/lib/shipping-constants';
+import { pickDailyRandomProducts } from '@/lib/utils';
 
 // Untyped client — Database generic requires generated Relationships; use explicit casts at call sites
 function getClient(): SupabaseClient {
@@ -138,11 +139,14 @@ export async function getRelatedProducts(productId: string, categoryId: string, 
   return data ?? [];
 }
 
+const PRODUCT_CARD_SELECT =
+  '*, images:product_images(url, is_primary, position), category:categories(name, slug)';
+
 export async function getFeaturedProducts(limit = 4) {
   const supabase = getClient();
   const { data } = await supabase
     .from('products')
-    .select('*, images:product_images(url, is_primary, position), category:categories(name, slug)')
+    .select(PRODUCT_CARD_SELECT)
     .eq('status', 'active')
     .eq('in_stock', true)
     .order('created_at', { ascending: false })
@@ -150,8 +154,17 @@ export async function getFeaturedProducts(limit = 4) {
   return data ?? [];
 }
 
-export async function getNewArrivals(limit = 4) {
-  return getFeaturedProducts(limit);
+export async function getNewArrivals(limit = 4, excludeIds: string[] = []) {
+  const supabase = getClient();
+  const { data } = await supabase
+    .from('products')
+    .select(PRODUCT_CARD_SELECT)
+    .eq('status', 'active')
+    .eq('in_stock', true)
+    .order('updated_at', { ascending: false })
+    .limit(80);
+
+  return pickDailyRandomProducts(data ?? [], limit, excludeIds);
 }
 
 export async function searchProducts(query: string, limit = 8) {

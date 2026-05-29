@@ -15,13 +15,15 @@ import { FREE_SHIPPING_THRESHOLD_US } from '@/lib/shipping-constants';
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const [featuredRaw, newArrivalsRaw, collectionCategories] = await Promise.all([
+  const [featuredRaw, collectionCategories] = await Promise.all([
     getFeaturedProducts(4),
-    getNewArrivals(4),
     getCollectionCategories(10),
   ]);
 
   const featured = mapDbProducts(featuredRaw as Record<string, unknown>[]);
+  const featuredIds = featured.map((p) => p.id);
+
+  const newArrivalsRaw = await getNewArrivals(4, featuredIds);
   const newArrivals = mapDbProducts(newArrivalsRaw as Record<string, unknown>[]);
   const mobileCollections = collectionCategories.slice(0, 6);
   const desktopCollections = collectionCategories.slice(0, 10);

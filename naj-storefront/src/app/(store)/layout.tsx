@@ -5,6 +5,8 @@ import MobileMenu from '@/components/layout/MobileMenu';
 import CartDrawer from '@/components/store/CartDrawer';
 import SearchOverlay from '@/components/store/SearchOverlay';
 import SalesNotification from '@/components/store/SalesNotification';
+import SmartsuppChat from '@/components/layout/SmartsuppChat';
+import BackToTopButton from '@/components/layout/BackToTopButton';
 
 export default function StoreLayout({
   children,
@@ -21,6 +23,8 @@ export default function StoreLayout({
       <MobileMenu />
       <MobileNav />
       <SalesNotification />
+      <SmartsuppChat />
+      <BackToTopButton />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import type { Product, Category, ShippingRate } from '@/types';
+import { pickDailyRandomProducts } from '@/lib/utils';
 
 export const CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Necklaces',  slug: 'necklaces',  parent_id: null, featured: true,  sort_order: 1 },
@@ -332,11 +333,9 @@ export function getFeaturedProducts(limit = 4): Product[] {
     .slice(0, limit);
 }
 
-export function getNewArrivals(limit = 4): Product[] {
-  return [...PRODUCTS]
-    .filter((p) => p.status === 'active')
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, limit);
+export function getNewArrivals(limit = 4, excludeIds: string[] = []): Product[] {
+  const pool = PRODUCTS.filter((p) => p.status === 'active');
+  return pickDailyRandomProducts(pool, limit, excludeIds);
 }
 
 export function searchProducts(query: string): Product[] {

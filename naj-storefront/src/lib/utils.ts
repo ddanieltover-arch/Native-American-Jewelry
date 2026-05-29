@@ -157,3 +157,27 @@ export function applyCoupon(
 export function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+
+/** Deterministic daily score for stable SSR product rotation. */
+function dailyScore(id: string, salt = 0): number {
+  const day = Math.floor(Date.now() / 86_400_000);
+  let h = (day + salt) * 2654435761;
+  for (let i = 0; i < id.length; i++) {
+    h = Math.imul(h ^ id.charCodeAt(i), 2246822519);
+  }
+  return h >>> 0;
+}
+
+/** Pick a daily-rotating random subset (excludes given ids). */
+export function pickDailyRandomProducts<T extends { id: string }>(
+  items: T[],
+  count: number,
+  excludeIds: string[] = []
+): T[] {
+  const exclude = new Set(excludeIds);
+  const pool = items.filter((p) => !exclude.has(p.id));
+  if (pool.length <= count) return pool;
+  return [...pool]
+    .sort((a, b) => dailyScore(a.id) - dailyScore(b.id))
+    .slice(0, count);
+}
