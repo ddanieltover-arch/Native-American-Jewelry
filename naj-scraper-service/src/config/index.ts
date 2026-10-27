@@ -5,12 +5,12 @@ const ConfigSchema = z.object({
   // Neon
   DATABASE_URL: z.string().min(10),
 
-  // Cloudflare R2
-  R2_ACCOUNT_ID: z.string().min(1),
-  R2_ACCESS_KEY_ID: z.string().min(1),
-  R2_SECRET_ACCESS_KEY: z.string().min(1),
+  // Cloudflare R2 (optional — without it, scraper keeps source image URLs)
+  R2_ACCOUNT_ID: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().optional()),
+  R2_ACCESS_KEY_ID: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().optional()),
+  R2_SECRET_ACCESS_KEY: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().optional()),
   R2_BUCKET: z.string().default('naj-assets'),
-  R2_PUBLIC_BASE_URL: z.string().url(),
+  R2_PUBLIC_BASE_URL: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().url().optional()),
 
   // Redis
   REDIS_URL: z.string().default('redis://localhost:6379'),

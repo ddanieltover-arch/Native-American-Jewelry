@@ -264,6 +264,8 @@ export async function uploadImageToStorage(
   mimeType: string = 'image/webp'
 ): Promise<string | null> {
   try {
+    const { isR2Configured } = await import('./r2');
+    if (!isR2Configured()) return null;
     const key = filePath.startsWith('product-images/')
       ? filePath
       : `product-images/${filePath}`;

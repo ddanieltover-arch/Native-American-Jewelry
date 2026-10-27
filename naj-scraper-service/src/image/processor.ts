@@ -39,14 +39,26 @@ export async function processImage(job: ImageJobData): Promise<ImageResult | nul
     // ── 4. Apply our brand watermark ─────────────────────
     processedBuffer = await applyBrandWatermark(processedBuffer);
 
-    // ── 5. Generate responsive sizes + upload ─────────────
-    const uploads = await generateAndUpload(processedBuffer, productId, position);
-    if (!uploads.large) return null;
+    // ── 5. Upload to R2 when configured; otherwise keep source URL ──
+    const { isR2Configured } = await import('../db/r2');
+    let publicUrl: string | null = null;
+    let storagePath = sourceUrl;
+
+    if (isR2Configured()) {
+      const uploads = await generateAndUpload(processedBuffer, productId, position);
+      publicUrl = uploads.large;
+      storagePath = `products/${productId}/${position}`;
+    } else {
+      publicUrl = sourceUrl;
+      logger.warn('R2 not configured — using source image URL', { productId, position });
+    }
+
+    if (!publicUrl) return null;
 
     // ── 6. Save image record to DB ────────────────────────
     await saveProductImage({
       product_id: productId,
-      url:        uploads.large,
+      url:        publicUrl,
       alt:        productName,
       is_primary: isPrimary,
       position,
@@ -65,8 +77,8 @@ export async function processImage(job: ImageJobData): Promise<ImageResult | nul
     return {
       productId,
       position,
-      storagePath: `products/${productId}/${position}`,
-      publicUrl:   uploads.large,
+      storagePath,
+      publicUrl,
       width:       finalMeta.width ?? 0,
       height:      finalMeta.height ?? 0,
       sizeBytes,
