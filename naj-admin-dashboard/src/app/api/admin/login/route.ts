@@ -1,11 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
+import { adminFindByEmail, adminTouchLogin } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !anonKey) {
     return NextResponse.json(
@@ -13,9 +12,9 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-  if (!serviceKey) {
+  if (!process.env.DATABASE_URL) {
     return NextResponse.json(
-      { error: 'Server misconfigured: SUPABASE_SERVICE_ROLE_KEY is not set on Vercel.' },
+      { error: 'Server misconfigured: DATABASE_URL is not set.' },
       { status: 500 }
     );
   }
@@ -46,22 +45,16 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
   if (authError) {
     return NextResponse.json({ error: authError.message }, { status: 401 });
   }
 
-  const service = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  const { data: adminUser, error: adminError } = await service
-    .from('admin_users')
-    .select('id, email, role')
-    .eq('email', email)
-    .maybeSingle();
-
-  if (adminError || !adminUser) {
+  const adminUser = await adminFindByEmail(email);
+  if (!adminUser) {
     await supabase.auth.signOut();
     return NextResponse.json(
       { error: 'This account is not authorized for admin access.' },
@@ -69,15 +62,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await service
-    .from('admin_users')
-    .update({
-      last_login_at: new Date().toISOString(),
-      last_login_ip: request.headers.get('x-forwarded-for') ?? 'unknown',
-    })
-    .eq('id', adminUser.id);
+  await adminTouchLogin(
+    adminUser.id as string,
+    request.headers.get('x-forwarded-for') ?? 'unknown'
+  );
 
-  const response = NextResponse.json({ data: adminUser });
+  const response = NextResponse.json({
+    data: {
+      id: adminUser.id,
+      email: adminUser.email,
+      role: adminUser.role,
+    },
+  });
   cookiesToSet.forEach(({ name, value, options }) => {
     response.cookies.set(name, value, options);
   });

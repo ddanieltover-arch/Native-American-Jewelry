@@ -1,0 +1,20 @@
+{
+  "name": "naj-db",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Neon schema, R2 helpers, and cutover scripts for Native American Jewelry",
+  "type": "module",
+  "scripts": {
+    "apply-schema": "node scripts/apply-schema.mjs",
+    "migrate-pg": "node scripts/migrate-pg.mjs",
+    "migrate-storage": "node scripts/migrate-storage.mjs",
+    "verify-counts": "node scripts/verify-counts.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.679.0",
+    "@neondatabase/serverless": "^0.10.4",
+    "@supabase/supabase-js": "^2.44.4",
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  }
+}

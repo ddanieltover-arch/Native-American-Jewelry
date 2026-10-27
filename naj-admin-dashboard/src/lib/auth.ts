@@ -1,12 +1,11 @@
 // ═══════════════════════════════════════════════════════════
-// Admin Auth Layer
-// Drop into naj-admin/src/lib/auth.ts
+// Admin Auth Layer — Supabase Auth + Neon admin_users
 // ═══════════════════════════════════════════════════════════
 import { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import { adminFindByEmail, adminTouchLogin } from '@/lib/db';
 
-// ─── Verify admin from Bearer token, admin_token cookie, or Supabase session ──
 export async function verifyAdminToken(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -23,7 +22,9 @@ export async function verifyAdminToken(req: NextRequest) {
     const service = createClient(supabaseUrl, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: { user } } = await service.auth.getUser(token);
+    const {
+      data: { user },
+    } = await service.auth.getUser(token);
     if (user?.email) userEmail = user.email;
   }
 
@@ -34,50 +35,42 @@ export async function verifyAdminToken(req: NextRequest) {
         setAll: () => {},
       },
     });
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (user?.email) userEmail = user.email;
   }
 
   if (!userEmail) return null;
 
   try {
-    const supabase = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    const { data: adminUser } = await supabase
-      .from('admin_users')
-      .select('id, email, role, totp_enabled')
-      .eq('email', userEmail.trim().toLowerCase())
-      .single();
-
+    const adminUser = await adminFindByEmail(userEmail);
     if (!adminUser) return null;
 
-    // Update last_login_at (fire and forget)
-    supabase
-      .from('admin_users')
-      .update({
-        last_login_at: new Date().toISOString(),
-        last_login_ip: req.headers.get('x-forwarded-for') ?? 'unknown',
-      })
-      .eq('id', adminUser.id)
-      .then(() => null);
+    void adminTouchLogin(
+      adminUser.id as string,
+      req.headers.get('x-forwarded-for') ?? 'unknown'
+    );
 
-    return adminUser;
+    return adminUser as {
+      id: string;
+      email: string;
+      role: string;
+      totp_enabled: boolean;
+    };
   } catch {
     return null;
   }
 }
 
-// ─── Role permission helpers ──────────────────────────────
 type AdminRole = 'super_admin' | 'admin' | 'editor' | 'support' | 'analyst';
 
 const ROLE_HIERARCHY: Record<AdminRole, number> = {
   super_admin: 100,
-  admin:       80,
-  editor:      60,
-  support:     40,
-  analyst:     20,
+  admin: 80,
+  editor: 60,
+  support: 40,
+  analyst: 20,
 };
 
 export function hasRole(userRole: AdminRole, requiredRole: AdminRole): boolean {

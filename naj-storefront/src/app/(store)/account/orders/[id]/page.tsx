@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { createClient } from '@/lib/supabase-client';
 import { formatPrice, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/lib/utils';
 import type { PaymentMethod } from '@/types';
 
@@ -12,13 +11,10 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   const [order, setOrder] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from('orders')
-      .select('*, items:order_items(*), payment:payments(*)')
-      .eq('id', id)
-      .single()
-      .then(({ data }) => setOrder(data as Record<string, unknown>));
+    fetch(`/api/account/orders/${id}`, { credentials: 'include', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setOrder((data?.order as Record<string, unknown>) ?? null))
+      .catch(() => setOrder(null));
   }, [id]);
 
   if (!order) {

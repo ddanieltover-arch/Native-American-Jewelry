@@ -1,34 +1,79 @@
 // ═══════════════════════════════════════════════════════════
-// Storefront data layer — replaces mock-data.ts
-// Drop these into naj-storefront/src/lib/db.ts
+// Storefront data layer — Neon Postgres (server-only)
 // ═══════════════════════════════════════════════════════════
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { qualifiesForFreeStandardShipping } from '@/lib/shipping-constants';
 import { pickDailyRandomProducts } from '@/lib/utils';
+import { getSql, isDatabaseConfigured } from '@/lib/neon';
+import { uploadToR2, R2_PREFIX } from '@/lib/r2';
 
-// Untyped client — Database generic requires generated Relationships; use explicit casts at call sites
-function getClient(): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: {
-        fetch: (url, options = {}) =>
-          fetch(url, { ...options, cache: 'no-store' }),
-      },
-    }
-  );
-}
+export { isDatabaseConfigured };
 
-function getAdminClient(): SupabaseClient {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error('Supabase admin client not configured (SUPABASE_SERVICE_ROLE_KEY)');
+type ProductRow = Record<string, unknown> & { id: string; category_id?: string | null };
+type CategoryMini = { id: string; name: string; slug: string } | null;
+type ImageRow = { id?: string; url: string; alt?: string | null; is_primary?: boolean; position?: number };
+type VariantRow = {
+  id: string;
+  name: string;
+  value: string;
+  price_modifier: number;
+  stock_quantity: number;
+  sku?: string | null;
+};
+
+async function attachProductRelations<T extends ProductRow>(
+  products: T[],
+  opts: { variants?: boolean } = {}
+): Promise<
+  (T & {
+    category: CategoryMini;
+    images: ImageRow[];
+    variants?: VariantRow[];
+  })[]
+> {
+  if (!products.length) return [];
+  const sql = getSql();
+  const ids = products.map((p) => p.id);
+
+  const images = (await sql`
+    SELECT id, product_id, url, alt, is_primary, position
+    FROM product_images
+    WHERE product_id = ANY(${ids}::uuid[])
+    ORDER BY position ASC
+  `) as (ImageRow & { product_id: string })[];
+
+  const categories = (await sql`
+    SELECT id, name, slug FROM categories
+    WHERE id = ANY(${products.map((p) => p.category_id).filter(Boolean)}::uuid[])
+  `) as { id: string; name: string; slug: string }[];
+
+  const catMap = new Map(categories.map((c) => [c.id, c]));
+  const imgMap = new Map<string, ImageRow[]>();
+  for (const img of images) {
+    const list = imgMap.get(img.product_id) ?? [];
+    list.push(img);
+    imgMap.set(img.product_id, list);
   }
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+
+  let variantMap = new Map<string, VariantRow[]>();
+  if (opts.variants) {
+    const variants = (await sql`
+      SELECT id, product_id, name, value, price_modifier, stock_quantity, sku
+      FROM product_variants
+      WHERE product_id = ANY(${ids}::uuid[])
+    `) as (VariantRow & { product_id: string })[];
+    for (const v of variants) {
+      const list = variantMap.get(v.product_id) ?? [];
+      list.push(v);
+      variantMap.set(v.product_id, list);
+    }
+  }
+
+  return products.map((p) => ({
+    ...p,
+    category: p.category_id ? catMap.get(p.category_id) ?? null : null,
+    images: imgMap.get(p.id) ?? [],
+    ...(opts.variants ? { variants: variantMap.get(p.id) ?? [] } : {}),
+  }));
 }
 
 // ══════════════════════════════════════════════════════════
@@ -36,146 +81,124 @@ function getAdminClient(): SupabaseClient {
 // ══════════════════════════════════════════════════════════
 
 export interface ProductFilters {
-  category?: string;       // category slug
-  search?:   string;
+  category?: string;
+  search?: string;
   minPrice?: number;
   maxPrice?: number;
-  inStock?:  boolean;
-  sortBy?:   'featured' | 'price_asc' | 'price_desc' | 'newest' | 'rating';
-  tags?:     string[];
-  page?:     number;
-  perPage?:  number;
+  inStock?: boolean;
+  sortBy?: 'featured' | 'price_asc' | 'price_desc' | 'newest' | 'rating';
+  tags?: string[];
+  page?: number;
+  perPage?: number;
 }
 
 export async function getProducts(filters: ProductFilters = {}) {
-  const supabase = getClient();
+  const sql = getSql();
   const { page = 1, perPage = 24 } = filters;
+  const offset = (page - 1) * perPage;
 
-  let query = supabase
-    .from('products')
-    .select(`
-      *,
-      category:categories(id, name, slug),
-      images:product_images(id, url, alt, is_primary, position),
-      variants:product_variants(id, name, value, price_modifier, stock_quantity)
-    `, { count: 'exact' })
-    .eq('status', 'active');
-
-  // Category filter (join via category slug)
+  let categoryId: string | null = null;
   if (filters.category) {
-    const { data: cat } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('slug', filters.category)
-      .single();
-    if (cat) query = query.eq('category_id', (cat as { id: string }).id);
+    const cats = (await sql`
+      SELECT id FROM categories WHERE slug = ${filters.category} LIMIT 1
+    `) as { id: string }[];
+    categoryId = cats[0]?.id ?? null;
   }
 
-  // Full-text search
-  if (filters.search) {
-    query = query.textSearch('name', filters.search, { type: 'websearch' });
-  }
+  const search = filters.search?.trim() || null;
+  const minPrice = filters.minPrice ?? null;
+  const maxPrice = filters.maxPrice ?? null;
+  const inStockOnly = filters.inStock ? true : null;
+  const tags = filters.tags?.length ? filters.tags : null;
+  const sortKey =
+    filters.sortBy === 'price_asc' ? 1 : filters.sortBy === 'price_desc' ? 2 : 0;
 
-  // Price range
-  if (filters.minPrice !== undefined) query = query.gte('price', filters.minPrice);
-  if (filters.maxPrice !== undefined) query = query.lte('price', filters.maxPrice);
+  const rows = (await sql`
+    SELECT p.*, COUNT(*) OVER()::int AS _total
+    FROM products p
+    WHERE p.status = 'active'
+      AND (${categoryId}::uuid IS NULL OR p.category_id = ${categoryId}::uuid)
+      AND (${search}::text IS NULL OR to_tsvector('english', p.name || ' ' || COALESCE(p.description, ''))
+            @@ websearch_to_tsquery('english', ${search ?? ''}))
+      AND (${minPrice}::numeric IS NULL OR p.price >= ${minPrice ?? 0})
+      AND (${maxPrice}::numeric IS NULL OR p.price <= ${maxPrice ?? 0})
+      AND (${inStockOnly}::boolean IS NULL OR p.in_stock = true)
+      AND (${tags}::text[] IS NULL OR p.tags && ${tags ?? []}::text[])
+    ORDER BY
+      CASE WHEN ${sortKey} = 1 THEN p.price END ASC NULLS LAST,
+      CASE WHEN ${sortKey} = 2 THEN p.price END DESC NULLS LAST,
+      p.created_at DESC
+    LIMIT ${perPage} OFFSET ${offset}
+  `) as (ProductRow & { _total: number })[];
 
-  // Stock
-  if (filters.inStock) query = query.eq('in_stock', true);
-
-  // Tags filter (any match)
-  if (filters.tags?.length) query = query.overlaps('tags', filters.tags);
-
-  // Sorting
-  switch (filters.sortBy) {
-    case 'newest':     query = query.order('created_at', { ascending: false }); break;
-    case 'price_asc':  query = query.order('price',      { ascending: true  }); break;
-    case 'price_desc': query = query.order('price',      { ascending: false }); break;
-    default:           query = query.order('created_at', { ascending: false }); break;
-  }
-
-  // Pagination
-  query = query.range((page - 1) * perPage, page * perPage - 1);
-
-  const { data, error, count } = await query;
-  if (error) throw new Error(`getProducts: ${error.message}`);
+  const total = rows[0]?._total ?? 0;
+  const products = await attachProductRelations(
+    rows.map(({ _total, ...p }) => p),
+    { variants: true }
+  );
 
   return {
-    products:    data ?? [],
-    total:       count ?? 0,
+    products,
+    total,
     page,
     perPage,
-    totalPages:  Math.ceil((count ?? 0) / perPage),
+    totalPages: Math.ceil(total / perPage),
   };
 }
 
 export async function getProductBySlug(slug: string) {
-  const supabase = getClient();
-  const { data, error } = await supabase
-    .from('products')
-    .select(`
-      *,
-      category:categories(id, name, slug),
-      images:product_images(id, url, alt, is_primary, position),
-      variants:product_variants(id, name, value, price_modifier, stock_quantity, sku)
-    `)
-    .eq('slug', slug)
-    .eq('status', 'active')
-    .single();
-
-  if (error) return null;
-  return data;
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products WHERE slug = ${slug} AND status = 'active' LIMIT 1
+  `) as ProductRow[];
+  if (!rows[0]) return null;
+  const [product] = await attachProductRelations(rows, { variants: true });
+  return product;
 }
 
 export async function getRelatedProducts(productId: string, categoryId: string, limit = 4) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('products')
-    .select('*, images:product_images(url, is_primary), category:categories(name, slug)')
-    .eq('status', 'active')
-    .eq('category_id', categoryId)
-    .neq('id', productId)
-    .limit(limit);
-  return data ?? [];
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products
+    WHERE status = 'active' AND category_id = ${categoryId} AND id <> ${productId}
+    LIMIT ${limit}
+  `) as ProductRow[];
+  return attachProductRelations(rows);
 }
 
-const PRODUCT_CARD_SELECT =
-  '*, images:product_images(url, is_primary, position), category:categories(name, slug)';
-
 export async function getFeaturedProducts(limit = 4) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('products')
-    .select(PRODUCT_CARD_SELECT)
-    .eq('status', 'active')
-    .eq('in_stock', true)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  return data ?? [];
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products
+    WHERE status = 'active' AND in_stock = true
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `) as ProductRow[];
+  return attachProductRelations(rows);
 }
 
 export async function getNewArrivals(limit = 4, excludeIds: string[] = []) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('products')
-    .select(PRODUCT_CARD_SELECT)
-    .eq('status', 'active')
-    .eq('in_stock', true)
-    .order('updated_at', { ascending: false })
-    .limit(80);
-
-  return pickDailyRandomProducts(data ?? [], limit, excludeIds);
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products
+    WHERE status = 'active' AND in_stock = true
+    ORDER BY updated_at DESC
+    LIMIT 80
+  `) as ProductRow[];
+  const withRels = await attachProductRelations(rows);
+  return pickDailyRandomProducts(withRels, limit, excludeIds);
 }
 
 export async function searchProducts(query: string, limit = 8) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('products')
-    .select('id, name, slug, price, images:product_images(url, is_primary), category:categories(name, slug)')
-    .eq('status', 'active')
-    .textSearch('name', query, { type: 'websearch' })
-    .limit(limit);
-  return data ?? [];
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products
+    WHERE status = 'active'
+      AND to_tsvector('english', name || ' ' || COALESCE(description, ''))
+          @@ websearch_to_tsquery('english', ${query})
+    LIMIT ${limit}
+  `) as ProductRow[];
+  return attachProductRelations(rows);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -183,22 +206,15 @@ export async function searchProducts(query: string, limit = 8) {
 // ══════════════════════════════════════════════════════════
 
 export async function getCategories() {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('categories')
-    .select('*')
-    .order('sort_order', { ascending: true });
-  return data ?? [];
+  const sql = getSql();
+  return (await sql`SELECT * FROM categories ORDER BY sort_order ASC`) as Record<string, unknown>[];
 }
 
 export async function getFeaturedCategories() {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('featured', true)
-    .order('sort_order', { ascending: true });
-  return data ?? [];
+  const sql = getSql();
+  return (await sql`
+    SELECT * FROM categories WHERE featured = true ORDER BY sort_order ASC
+  `) as { id: string; name: string; slug: string; banner_url?: string | null }[];
 }
 
 export type CollectionCategory = {
@@ -208,32 +224,50 @@ export type CollectionCategory = {
   thumbnail_url: string | null;
 };
 
-/** Homepage collections grid — categories with ≥1 active product; thumbnail from a product image. */
 export async function getCollectionCategories(limit = 10): Promise<CollectionCategory[]> {
-  const supabase = getClient();
-
-  const [featured, { data: all }, { data: activeProducts }] = await Promise.all([
+  const sql = getSql();
+  const [featured, allRaw, activeRaw] = await Promise.all([
     getFeaturedCategories(),
-    supabase
-      .from('categories')
-      .select('id, name, slug, banner_url, featured, sort_order')
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('products')
-      .select('category_id, images:product_images(url, is_primary, position)')
-      .eq('status', 'active')
-      .not('category_id', 'is', null)
-      .order('created_at', { ascending: false }),
+    sql`SELECT id, name, slug, banner_url, featured, sort_order FROM categories ORDER BY sort_order ASC`,
+    sql`
+      SELECT p.category_id, pi.url, pi.is_primary, pi.position
+      FROM products p
+      LEFT JOIN product_images pi ON pi.product_id = p.id
+      WHERE p.status = 'active' AND p.category_id IS NOT NULL
+      ORDER BY p.created_at DESC
+    `,
   ]);
+  const all = allRaw as {
+    id: string;
+    name: string;
+    slug: string;
+    banner_url?: string | null;
+  }[];
+  const activeProducts = activeRaw as {
+    category_id: string;
+    url: string | null;
+    is_primary: boolean | null;
+    position: number | null;
+  }[];
 
   const categoryIdsWithProducts = new Set<string>();
   const thumbByCategory = new Map<string, string>();
-  for (const row of activeProducts ?? []) {
-    const catId = row.category_id as string;
-    if (!catId) continue;
-    categoryIdsWithProducts.add(catId);
-    if (thumbByCategory.has(catId)) continue;
-    const images = (row.images as { url: string; is_primary?: boolean; position?: number }[]) ?? [];
+  const imagesByCat = new Map<string, { url: string; is_primary?: boolean; position?: number }[]>();
+
+  for (const row of activeProducts) {
+    if (!row.category_id) continue;
+    categoryIdsWithProducts.add(row.category_id);
+    if (!row.url) continue;
+    const list = imagesByCat.get(row.category_id) ?? [];
+    list.push({
+      url: row.url,
+      is_primary: row.is_primary ?? false,
+      position: row.position ?? 0,
+    });
+    imagesByCat.set(row.category_id, list);
+  }
+
+  for (const [catId, images] of imagesByCat) {
     const sorted = [...images].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     const url = sorted.find((i) => i.is_primary)?.url ?? sorted[0]?.url;
     if (url) thumbByCategory.set(catId, url);
@@ -243,19 +277,19 @@ export async function getCollectionCategories(limit = 10): Promise<CollectionCat
   for (const c of featured) {
     if (!merged.some((m) => m.id === c.id)) merged.push(c);
   }
-  for (const c of all ?? []) {
+  for (const c of all) {
     if (!merged.some((m) => m.id === c.id)) merged.push(c);
   }
 
-  const withProducts = merged.filter((c) => categoryIdsWithProducts.has(c.id));
-  const top = withProducts.slice(0, limit);
-
-  return top.map((cat) => ({
-    id: cat.id,
-    name: cat.name,
-    slug: cat.slug,
-    thumbnail_url: thumbByCategory.get(cat.id) ?? cat.banner_url ?? null,
-  }));
+  return merged
+    .filter((c) => categoryIdsWithProducts.has(c.id))
+    .slice(0, limit)
+    .map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      slug: cat.slug,
+      thumbnail_url: thumbByCategory.get(cat.id) ?? cat.banner_url ?? null,
+    }));
 }
 
 // ══════════════════════════════════════════════════════════
@@ -263,59 +297,52 @@ export async function getCollectionCategories(limit = 10): Promise<CollectionCat
 // ══════════════════════════════════════════════════════════
 
 export async function getShippingRates(zone?: 'usa' | 'international') {
-  const supabase = getClient();
-  let query = supabase
-    .from('shipping_rates')
-    .select('*')
-    .eq('active', true)
-    .order('rate', { ascending: true });
-
-  if (zone) query = query.eq('zone', zone);
-
-  const { data } = await query;
-  return data ?? [];
+  const sql = getSql();
+  if (zone) {
+    return (await sql`
+      SELECT * FROM shipping_rates WHERE active = true AND zone = ${zone} ORDER BY rate ASC
+    `) as Record<string, unknown>[];
+  }
+  return (await sql`
+    SELECT * FROM shipping_rates WHERE active = true ORDER BY rate ASC
+  `) as Record<string, unknown>[];
 }
 
 export async function getShippingRateById(id: string) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('shipping_rates')
-    .select('*')
-    .eq('id', id)
-    .single();
-  return data;
+  const sql = getSql();
+  const rows = (await sql`SELECT * FROM shipping_rates WHERE id = ${id} LIMIT 1`) as Record<
+    string,
+    unknown
+  >[];
+  return rows[0] ?? null;
 }
 
 // ══════════════════════════════════════════════════════════
 // NEWSLETTER & CONTACT
 // ══════════════════════════════════════════════════════════
 
+/** @deprecated use isDatabaseConfigured */
 export function isSupabaseAdminConfigured(): boolean {
-  return Boolean(
-    process.env.SUPABASE_SERVICE_ROLE_KEY &&
-      (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)
-  );
+  return isDatabaseConfigured();
 }
 
 export async function subscribeNewsletter(
   email: string,
   source = 'footer'
 ): Promise<{ ok: true; duplicate?: boolean }> {
-  const supabase = getAdminClient();
+  const sql = getSql();
   const normalized = email.trim().toLowerCase();
-
-  const { error } = await supabase.from('newsletter_subscribers').insert({
-    email: normalized,
-    source,
-  });
-
-  if (error?.code === '23505') {
-    return { ok: true, duplicate: true };
+  try {
+    await sql`
+      INSERT INTO newsletter_subscribers (email, source)
+      VALUES (${normalized}, ${source})
+    `;
+    return { ok: true };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === '23505') return { ok: true, duplicate: true };
+    throw err instanceof Error ? err : new Error(String(err));
   }
-  if (error) {
-    throw new Error(`subscribeNewsletter: ${error.message}`);
-  }
-  return { ok: true };
 }
 
 export async function saveContactSubmission(payload: {
@@ -324,18 +351,16 @@ export async function saveContactSubmission(payload: {
   subject?: string;
   message: string;
 }): Promise<{ ok: true }> {
-  const supabase = getAdminClient();
-
-  const { error } = await supabase.from('contact_submissions').insert({
-    name: payload.name.trim(),
-    email: payload.email.trim().toLowerCase(),
-    subject: payload.subject?.trim() || null,
-    message: payload.message.trim(),
-  });
-
-  if (error) {
-    throw new Error(`saveContactSubmission: ${error.message}`);
-  }
+  const sql = getSql();
+  await sql`
+    INSERT INTO contact_submissions (name, email, subject, message)
+    VALUES (
+      ${payload.name.trim()},
+      ${payload.email.trim().toLowerCase()},
+      ${payload.subject?.trim() || null},
+      ${payload.message.trim()}
+    )
+  `;
   return { ok: true };
 }
 
@@ -344,31 +369,38 @@ export async function saveContactSubmission(payload: {
 // ══════════════════════════════════════════════════════════
 
 export async function validateCoupon(code: string, subtotal: number) {
-  const supabase = getAdminClient();
-  const { data: coupon } = await supabase
-    .from('coupons')
-    .select('*')
-    .eq('code', code.toUpperCase())
-    .eq('active', true)
-    .single();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM coupons
+    WHERE code = ${code.toUpperCase()} AND active = true
+    LIMIT 1
+  `) as {
+    id: string;
+    expires_at: string | null;
+    max_uses: number | null;
+    used_count: number;
+    min_order: number;
+    type: string;
+    value: number;
+  }[];
 
+  const coupon = rows[0];
   if (!coupon) return { valid: false, error: 'Coupon not found' };
 
   if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
     return { valid: false, error: 'Coupon has expired' };
   }
-
   if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
     return { valid: false, error: 'Coupon usage limit reached' };
   }
-
-  if (subtotal < coupon.min_order) {
+  if (subtotal < Number(coupon.min_order)) {
     return { valid: false, error: `Minimum order of $${coupon.min_order} required` };
   }
 
-  const discount = coupon.type === 'percent'
-    ? (subtotal * coupon.value) / 100
-    : Math.min(coupon.value, subtotal);
+  const discount =
+    coupon.type === 'percent'
+      ? (subtotal * Number(coupon.value)) / 100
+      : Math.min(Number(coupon.value), subtotal);
 
   return { valid: true, coupon, discount };
 }
@@ -378,30 +410,30 @@ export async function validateCoupon(code: string, subtotal: number) {
 // ══════════════════════════════════════════════════════════
 
 export interface CreateOrderPayload {
-  email:         string;
-  firstName:     string;
-  lastName:      string;
-  phone?:        string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
   address: {
-    line1:   string;
-    line2?:  string;
-    city:    string;
-    state?:  string;
+    line1: string;
+    line2?: string;
+    city: string;
+    state?: string;
     country: string;
-    zip?:    string;
+    zip?: string;
   };
   shippingRateId: string;
-  paymentMethod:  'chime' | 'cashapp' | 'apple_cash' | 'zelle' | 'bank_transfer';
+  paymentMethod: 'chime' | 'cashapp' | 'apple_cash' | 'zelle' | 'bank_transfer';
   items: Array<{
-    productId:   string;
+    productId: string;
     productName: string;
-    variantId?:  string;
-    quantity:    number;
-    unitPrice:   number;
+    variantId?: string;
+    quantity: number;
+    unitPrice: number;
   }>;
-  couponCode?:   string;
-  notes?:        string;
-  customerId?:   string;
+  couponCode?: string;
+  notes?: string;
+  customerId?: string;
 }
 
 function generateOrderNumber(): string {
@@ -411,29 +443,33 @@ function generateOrderNumber(): string {
 }
 
 export async function createOrder(payload: CreateOrderPayload) {
-  const supabase = getAdminClient();
+  const sql = getSql();
 
-  // Validate shipping rate
   const shippingRate = await getShippingRateById(payload.shippingRateId);
   if (!shippingRate) throw new Error('Invalid shipping rate');
 
-  // Calculate totals
   const subtotal = payload.items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0);
-  const shippingCost = qualifiesForFreeStandardShipping(shippingRate, subtotal)
+  const shippingCost = qualifiesForFreeStandardShipping(
+    {
+      method: String(shippingRate.method ?? 'standard'),
+      free_threshold:
+        shippingRate.free_threshold === null || shippingRate.free_threshold === undefined
+          ? null
+          : Number(shippingRate.free_threshold),
+    },
+    subtotal
+  )
     ? 0
-    : shippingRate.rate;
+    : Number(shippingRate.rate);
 
-  // Apply coupon
   let discountAmount = 0;
   if (payload.couponCode) {
     const couponResult = await validateCoupon(payload.couponCode, subtotal);
-    if (couponResult.valid) {
+    if (couponResult.valid && couponResult.coupon) {
       discountAmount = couponResult.discount ?? 0;
-      // Increment used_count
-      await supabase
-        .from('coupons')
-        .update({ used_count: (couponResult.coupon!.used_count + 1) })
-        .eq('id', couponResult.coupon!.id);
+      await sql`
+        UPDATE coupons SET used_count = used_count + 1 WHERE id = ${couponResult.coupon.id}
+      `;
     }
   }
 
@@ -441,197 +477,275 @@ export async function createOrder(payload: CreateOrderPayload) {
 
   let customerId: string | null = payload.customerId ?? null;
   if (!customerId) {
-    const { data: existingCustomer } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('email', payload.email)
-      .maybeSingle();
-    if (existingCustomer) customerId = existingCustomer.id;
+    const existing = (await sql`
+      SELECT id FROM customers WHERE email = ${payload.email} LIMIT 1
+    `) as { id: string }[];
+    if (existing[0]) customerId = existing[0].id;
   }
 
   if (customerId) {
-    await supabase
-      .from('customers')
-      .update({
-        first_name: payload.firstName,
-        last_name:  payload.lastName,
-        phone:      payload.phone ?? null,
-      })
-      .eq('id', customerId);
+    await sql`
+      UPDATE customers SET
+        first_name = ${payload.firstName},
+        last_name = ${payload.lastName},
+        phone = ${payload.phone ?? null}
+      WHERE id = ${customerId}
+    `;
   }
 
-  // Create order
   const orderNumber = generateOrderNumber();
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .insert({
-      order_number:     orderNumber,
-      customer_id:      customerId,
-      status:           'awaiting_payment',
-      subtotal,
-      shipping_cost:    shippingCost,
-      discount_amount:  discountAmount,
-      total,
-      shipping_method:  shippingRate.label,
-      shipping_address: {
-        email:      payload.email,
-        first_name: payload.firstName,
-        last_name:  payload.lastName,
-        phone:      payload.phone ?? null,
-        line1:      payload.address.line1,
-        line2:      payload.address.line2 ?? null,
-        city:       payload.address.city,
-        state:      payload.address.state ?? null,
-        country:    payload.address.country,
-        zip:        payload.address.zip ?? null,
-      },
-      coupon_code: payload.couponCode ?? null,
-      notes:       payload.notes ?? null,
-    })
-    .select('id')
-    .single();
+  const shippingAddress = {
+    email: payload.email,
+    first_name: payload.firstName,
+    last_name: payload.lastName,
+    phone: payload.phone ?? null,
+    line1: payload.address.line1,
+    line2: payload.address.line2 ?? null,
+    city: payload.address.city,
+    state: payload.address.state ?? null,
+    country: payload.address.country,
+    zip: payload.address.zip ?? null,
+  };
 
-  if (orderError) throw new Error(`Failed to create order: ${orderError.message}`);
+  const orderRows = (await sql`
+    INSERT INTO orders (
+      order_number, customer_id, status, subtotal, shipping_cost, discount_amount, total,
+      shipping_method, shipping_address, coupon_code, notes
+    ) VALUES (
+      ${orderNumber},
+      ${customerId},
+      'awaiting_payment',
+      ${subtotal},
+      ${shippingCost},
+      ${discountAmount},
+      ${total},
+      ${String(shippingRate.label)},
+      ${JSON.stringify(shippingAddress)}::jsonb,
+      ${payload.couponCode ?? null},
+      ${payload.notes ?? null}
+    )
+    RETURNING id
+  `) as { id: string }[];
 
-  // Insert order items
-  await supabase.from('order_items').insert(
-    payload.items.map((item) => ({
-      order_id:     order.id,
-      product_id:   item.productId,
-      product_name: item.productName,
-      variant_id:   item.variantId ?? null,
-      quantity:     item.quantity,
-      unit_price:   item.unitPrice,
-      subtotal:     item.unitPrice * item.quantity,
-    }))
-  );
+  const orderId = orderRows[0].id;
 
-  // Create payment record
-  await supabase.from('payments').insert({
-    order_id: order.id,
-    method:   payload.paymentMethod,
-    status:   'pending',
-    amount:   total,
-  });
+  for (const item of payload.items) {
+    await sql`
+      INSERT INTO order_items (
+        order_id, product_id, product_name, variant_id, quantity, unit_price, subtotal
+      ) VALUES (
+        ${orderId},
+        ${item.productId},
+        ${item.productName},
+        ${item.variantId ?? null},
+        ${item.quantity},
+        ${item.unitPrice},
+        ${item.unitPrice * item.quantity}
+      )
+    `;
+  }
 
-  // Decrement stock for each item
+  await sql`
+    INSERT INTO payments (order_id, method, status, amount)
+    VALUES (${orderId}, ${payload.paymentMethod}, 'pending', ${total})
+  `;
+
   for (const item of payload.items) {
     try {
-      await supabase.rpc('decrement_stock', {
-        p_product_id: item.productId,
-        p_quantity: item.quantity,
-      });
+      await sql`SELECT decrement_stock(${item.productId}::uuid, ${item.quantity}::int)`;
     } catch {
-      // non-fatal if RPC not yet created
+      /* non-fatal */
     }
   }
 
   return {
     orderNumber,
-    orderId: order.id,
+    orderId,
     total,
     subtotal,
     shippingCost,
     discountAmount,
-    shippingMethod: shippingRate.label,
+    shippingMethod: String(shippingRate.label),
   };
 }
 
 export async function getCustomerOrders(customerId: string) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('orders')
-    .select(`*, items:order_items(*), payment:payments(*)`)
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false });
-  return data ?? [];
+  const sql = getSql();
+  const orders = (await sql`
+    SELECT * FROM orders WHERE customer_id = ${customerId} ORDER BY created_at DESC
+  `) as { id: string }[];
+
+  if (!orders.length) return [];
+
+  const ids = orders.map((o) => o.id);
+  const items = (await sql`
+    SELECT * FROM order_items WHERE order_id = ANY(${ids}::uuid[])
+  `) as { order_id: string }[];
+  const payments = (await sql`
+    SELECT * FROM payments WHERE order_id = ANY(${ids}::uuid[])
+  `) as { order_id: string }[];
+
+  return orders.map((o) => ({
+    ...o,
+    items: items.filter((i) => i.order_id === o.id),
+    payment: payments.filter((p) => p.order_id === o.id),
+  }));
+}
+
+export async function getOrderByIdForCustomer(orderId: string, customerId: string) {
+  const sql = getSql();
+  const orders = (await sql`
+    SELECT * FROM orders WHERE id = ${orderId} AND customer_id = ${customerId} LIMIT 1
+  `) as { id: string }[];
+  if (!orders[0]) return null;
+
+  const items = await sql`SELECT * FROM order_items WHERE order_id = ${orderId}`;
+  const payments = await sql`SELECT * FROM payments WHERE order_id = ${orderId}`;
+  return { ...orders[0], items, payment: payments };
 }
 
 export async function uploadPaymentProof(
-  orderId:  string,
-  file:     File,
-  authToken:string
+  orderId: string,
+  file: File | { name: string; type: string; arrayBuffer: () => Promise<ArrayBuffer> },
+  _authToken?: string
 ) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${authToken}` } } }
-  );
+  const sql = getSql();
+  const filePath = `${R2_PREFIX.paymentProofs}/${orderId}/${Date.now()}_${file.name}`;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const publicUrl = await uploadToR2(filePath, buffer, file.type || 'application/octet-stream');
 
-  const filePath = `${orderId}/${Date.now()}_${file.name}`;
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('payment-proofs')
-    .upload(filePath, file, { upsert: true });
-
-  if (uploadError) throw uploadError;
-
-  const { data: { publicUrl } } = supabase.storage
-    .from('payment-proofs')
-    .getPublicUrl(filePath);
-
-  // Update payment record
-  await supabase
-    .from('payments')
-    .update({ status: 'uploaded', proof_url: publicUrl })
-    .eq('order_id', orderId);
-
-  // Update order status
-  await supabase
-    .from('orders')
-    .update({ status: 'payment_uploaded' })
-    .eq('id', orderId);
+  await sql`
+    UPDATE payments SET status = 'uploaded', proof_url = ${publicUrl}
+    WHERE order_id = ${orderId}
+  `;
+  await sql`
+    UPDATE orders SET status = 'payment_uploaded' WHERE id = ${orderId}
+  `;
 
   return publicUrl;
 }
 
+export async function ensureCustomerRow(input: {
+  id: string;
+  email: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+}) {
+  const sql = getSql();
+  const existing = (await sql`
+    SELECT id, email, first_name, last_name, phone, wishlist, blacklisted
+    FROM customers WHERE id = ${input.id} LIMIT 1
+  `) as Record<string, unknown>[];
+
+  if (existing[0]) return existing[0];
+
+  const inserted = (await sql`
+    INSERT INTO customers (id, email, first_name, last_name, phone)
+    VALUES (
+      ${input.id},
+      ${input.email},
+      ${input.first_name ?? null},
+      ${input.last_name ?? null},
+      ${input.phone ?? null}
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      first_name = COALESCE(EXCLUDED.first_name, customers.first_name),
+      last_name = COALESCE(EXCLUDED.last_name, customers.last_name),
+      phone = COALESCE(EXCLUDED.phone, customers.phone),
+      updated_at = NOW()
+    RETURNING id, email, first_name, last_name, phone, wishlist, blacklisted
+  `) as Record<string, unknown>[];
+
+  return inserted[0] ?? null;
+}
+
+export async function updateCustomerProfile(
+  customerId: string,
+  updates: { first_name?: string | null; last_name?: string | null; phone?: string | null; wishlist?: string[] }
+) {
+  const sql = getSql();
+  if (updates.wishlist) {
+    await sql`
+      UPDATE customers SET wishlist = ${updates.wishlist}::uuid[] WHERE id = ${customerId}
+    `;
+  }
+  if (
+    updates.first_name !== undefined ||
+    updates.last_name !== undefined ||
+    updates.phone !== undefined
+  ) {
+    const current = (await sql`
+      SELECT first_name, last_name, phone FROM customers WHERE id = ${customerId} LIMIT 1
+    `) as { first_name: string | null; last_name: string | null; phone: string | null }[];
+    const c = current[0];
+    if (!c) return;
+    await sql`
+      UPDATE customers SET
+        first_name = ${updates.first_name !== undefined ? updates.first_name : c.first_name},
+        last_name = ${updates.last_name !== undefined ? updates.last_name : c.last_name},
+        phone = ${updates.phone !== undefined ? updates.phone : c.phone}
+      WHERE id = ${customerId}
+    `;
+  }
+}
+
+export async function getCustomerAddresses(customerId: string) {
+  const sql = getSql();
+  return await sql`
+    SELECT * FROM customer_addresses
+    WHERE customer_id = ${customerId}
+    ORDER BY is_default DESC
+  `;
+}
+
 // ══════════════════════════════════════════════════════════
-// NOTIFICATIONS
+// NOTIFICATIONS / TESTIMONIALS / WISHLIST
 // ══════════════════════════════════════════════════════════
 
 export async function getNotificationConfig() {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('notifications')
-    .select('*')
-    .eq('active', true)
-    .single();
-  return data;
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM notifications WHERE active = true LIMIT 1`;
+  return rows[0] ?? null;
 }
-
-// ══════════════════════════════════════════════════════════
-// TESTIMONIALS
-// ══════════════════════════════════════════════════════════
 
 export async function getApprovedTestimonials(limit = 6) {
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('testimonials')
-    .select('*')
-    .eq('approved', true)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  return data ?? [];
+  const sql = getSql();
+  return await sql`
+    SELECT * FROM testimonials
+    WHERE approved = true
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
 }
 
-// ══════════════════════════════════════════════════════════
-// WISHLIST  (customer-side, no auth required to read)
-// ══════════════════════════════════════════════════════════
-
 export async function syncWishlist(customerId: string, productIds: string[]) {
-  const supabase = getClient();
-  await supabase
-    .from('customers')
-    .update({ wishlist: productIds })
-    .eq('id', customerId);
+  await updateCustomerProfile(customerId, { wishlist: productIds });
 }
 
 export async function getWishlistProducts(productIds: string[]) {
   if (!productIds.length) return [];
-  const supabase = getClient();
-  const { data } = await supabase
-    .from('products')
-    .select('*, images:product_images(url, is_primary), category:categories(name, slug)')
-    .in('id', productIds)
-    .eq('status', 'active');
-  return data ?? [];
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT * FROM products
+    WHERE id = ANY(${productIds}::uuid[]) AND status = 'active'
+  `) as ProductRow[];
+  return attachProductRelations(rows);
+}
+
+export async function getActiveProductsForFeed(limit = 5000) {
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT id, name, slug, description, price, sku, in_stock, seo_title, category_id
+    FROM products WHERE status = 'active' LIMIT ${limit}
+  `) as ProductRow[];
+  return attachProductRelations(rows);
+}
+
+export async function getActiveProductSlugs() {
+  const sql = getSql();
+  return (await sql`
+    SELECT slug, updated_at FROM products WHERE status = 'active'
+  `) as { slug: string; updated_at: string }[];
 }

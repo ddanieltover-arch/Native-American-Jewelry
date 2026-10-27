@@ -1,15 +1,20 @@
 # Deployment Guide — Native American Jewelry
 
-## 1. Supabase (required first)
+## Architecture
 
-1. Open [Supabase SQL Editor](https://supabase.com/dashboard/project/juddflbuwnymmwyyekrw/sql/new)
-2. Run migrations **in order** from `naj-supabase-integration/migrations/`:
-   - `001_schema.sql`
-   - `002_seed.sql`
-   - `003_functions.sql`
-   - `004_seed_sample_products.sql` (optional sample catalog)
-3. Create an admin user: Authentication → Users → Add user
-4. Insert admin row (replace email):
+| Concern | Provider |
+|---------|----------|
+| Auth (customers + admin login) | **Supabase Auth** |
+| Postgres (catalog, orders, admin_users, …) | **Neon** |
+| Files (product images, payment proofs) | **Cloudflare R2** |
+
+Full cutover steps: [naj-db/CUTOVER.md](naj-db/CUTOVER.md) and [naj-db/README.md](naj-db/README.md).
+
+## 1. Neon + R2 (required first)
+
+1. Create a Neon project; apply schema from `naj-db/migrations/` (`npm run apply-schema` in `naj-db`).
+2. Create Cloudflare R2 bucket + public base URL.
+3. Create a Supabase Auth user for admin; insert matching row on **Neon**:
 
 ```sql
 INSERT INTO admin_users (email, role)
@@ -17,19 +22,18 @@ VALUES ('your-admin@email.com', 'super_admin')
 ON CONFLICT (email) DO NOTHING;
 ```
 
-5. Seed catalog (if empty): `node scripts/setup-supabase.mjs`
+4. For live data from an existing Supabase DB, follow `naj-db/CUTOVER.md` (`migrate-pg` + `migrate-storage`).
 
 ## 2. Environment variables
-
-Copy from `.env.all-services.example` and set in each host:
 
 | Service | Key files |
 |---------|-----------|
 | Storefront | `naj-storefront/.env.local` |
 | Admin | `naj-admin-dashboard/.env.local` |
 | Scraper | `naj-scraper-service/.env` |
+| Cutover scripts | `naj-db/.env` |
 
-Required: `SUPABASE_*`, `RESEND_API_KEY`, `FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL`
+Required: `DATABASE_URL`, `R2_*`, Supabase Auth keys (`NEXT_PUBLIC_SUPABASE_*`), `RESEND_API_KEY`, `FROM_EMAIL`, `NEXT_PUBLIC_SITE_URL`
 
 Transactional emails (shared `naj-email-templates/`): order confirmation, payment instructions, payment verified/failed/refunded, shipped/delivered. Configure payment handles: `PAYMENT_CHIME_HANDLE`, `PAYMENT_CASHAPP_TAG`, `PAYMENT_ZELLE_EMAIL`, etc. See `naj-email-templates/README.md`.
 
@@ -57,7 +61,7 @@ Full guide: [naj-scraper-service/RENDER.md](naj-scraper-service/RENDER.md)
 
 1. Create **Upstash Redis** → copy `REDIS_URL`
 2. Render → **New → Blueprint** → connect [GitHub repo](https://github.com/ddanieltover-arch/Native-American-Jewelry)
-3. Add env vars to **naj-scraper-api** and **naj-scraper-worker** (Supabase, Redis, `SCRAPER_API_KEY`, etc.)
+3. Add env vars to **naj-scraper-api** and **naj-scraper-worker** (`DATABASE_URL`, `R2_*`, Redis, `SCRAPER_API_KEY`, etc.)
 4. Your scraper URL:
 
 ```env

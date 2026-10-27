@@ -1,78 +1,87 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+/**
+ * Scraper data layer — Neon Postgres + Cloudflare R2
+ * (filename kept for import compatibility)
+ */
+import { getSql } from './neon';
+import { uploadToR2 } from './r2';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { makeSlug } from '../utils/helpers';
 import { productHandleFromUrl } from '../scraper/shopify';
 import type { ScrapeLog, ScrapeError } from '../types';
 
-// ─── Singleton client ─────────────────────────────────────
-let _client: SupabaseClient | null = null;
-
-export function getSupabase(): SupabaseClient {
-  if (!_client) {
-    _client = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+export async function createScrapeLog(jobId: string, targetUrl: string): Promise<void> {
+  const sql = getSql();
+  try {
+    await sql`
+      INSERT INTO scrape_logs (
+        job_id, target_url, status, products_found, products_filtered, products_imported, errors, started_at
+      ) VALUES (
+        ${jobId}, ${targetUrl}, 'running', 0, 0, 0, NULL, NOW()
+      )
+    `;
+  } catch (error) {
+    logger.error('Failed to create scrape log', { error, jobId });
   }
-  return _client;
-}
-
-// ─── Scrape log helpers ───────────────────────────────────
-export async function createScrapeLog(
-  jobId: string,
-  targetUrl: string
-): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('scrape_logs').insert({
-    job_id:            jobId,
-    target_url:        targetUrl,
-    status:            'running',
-    products_found:    0,
-    products_filtered: 0,
-    products_imported: 0,
-    errors:            null,
-    started_at:        new Date().toISOString(),
-  });
-
-  if (error) logger.error('Failed to create scrape log', { error, jobId });
 }
 
 export async function updateScrapeLog(
   jobId: string,
   updates: Partial<ScrapeLog>
 ): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase
-    .from('scrape_logs')
-    .update(updates)
-    .eq('job_id', jobId);
-
-  if (error) logger.error('Failed to update scrape log', { error, jobId });
+  const sql = getSql();
+  try {
+    const current = (await sql`
+      SELECT * FROM scrape_logs WHERE job_id = ${jobId} ORDER BY started_at DESC LIMIT 1
+    `) as Record<string, unknown>[];
+    if (!current[0]) return;
+    const c = current[0];
+    await sql`
+      UPDATE scrape_logs SET
+        status = ${updates.status ?? (c.status as string)},
+        products_found = ${updates.products_found ?? Number(c.products_found)},
+        products_filtered = ${updates.products_filtered ?? Number(c.products_filtered)},
+        products_imported = ${updates.products_imported ?? Number(c.products_imported)},
+        errors = ${
+          updates.errors !== undefined
+            ? updates.errors
+              ? JSON.stringify(updates.errors)
+              : null
+            : c.errors
+              ? JSON.stringify(c.errors)
+              : null
+        }::jsonb,
+        duration_ms = ${updates.duration_ms ?? (c.duration_ms as number | null)},
+        completed_at = ${updates.completed_at ?? (c.completed_at as string | null)}
+      WHERE job_id = ${jobId}
+    `;
+  } catch (error) {
+    logger.error('Failed to update scrape log', { error, jobId });
+  }
 }
 
 export async function completeScrapeLog(
   jobId: string,
   data: {
-    productsFound:    number;
+    productsFound: number;
     productsFiltered: number;
     productsImported: number;
-    errors:           ScrapeError[];
-    durationMs:       number;
-    status:           'completed' | 'failed' | 'partial';
+    errors: ScrapeError[];
+    durationMs: number;
+    status: 'completed' | 'failed' | 'partial';
   }
 ): Promise<void> {
   await updateScrapeLog(jobId, {
-    status:            data.status,
-    products_found:    data.productsFound,
+    status: data.status,
+    products_found: data.productsFound,
     products_filtered: data.productsFiltered,
     products_imported: data.productsImported,
-    errors:            data.errors.length ? data.errors : null,
-    duration_ms:       data.durationMs,
-    completed_at:      new Date().toISOString(),
+    errors: data.errors.length ? data.errors : null,
+    duration_ms: data.durationMs,
+    completed_at: new Date().toISOString(),
   });
 }
 
-// ─── Resolve or create category by scraped name ─────────────
 export async function resolveCategoryId(
   categoryName: string | null | undefined,
   options?: { description?: string | null; collectionSlug?: string }
@@ -85,52 +94,39 @@ export async function resolveCategoryId(
     : makeSlug(name);
   if (!slug) return null;
 
-  const supabase = getSupabase();
+  const sql = getSql();
 
-  const { data: existing } = await supabase
-    .from('categories')
-    .select('id, description')
-    .eq('slug', slug)
-    .maybeSingle();
+  const existing = (await sql`
+    SELECT id, description FROM categories WHERE slug = ${slug} LIMIT 1
+  `) as { id: string; description: string | null }[];
 
-  if (existing?.id) {
-    if (options?.description && !existing.description) {
-      await supabase
-        .from('categories')
-        .update({ description: options.description })
-        .eq('id', existing.id);
+  if (existing[0]?.id) {
+    if (options?.description && !existing[0].description) {
+      await sql`
+        UPDATE categories SET description = ${options.description} WHERE id = ${existing[0].id}
+      `;
     }
-    return existing.id;
+    return existing[0].id;
   }
 
-  const { data: created, error } = await supabase
-    .from('categories')
-    .insert({
-      name,
-      slug,
-      description: options?.description ?? null,
-      featured:    false,
-      sort_order:  99,
-    })
-    .select('id')
-    .single();
-
-  if (error) {
-    const { data: retry } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('slug', slug)
-      .maybeSingle();
-    if (retry?.id) return retry.id;
-    logger.warn('Failed to resolve category', { name, slug, error });
+  try {
+    const created = (await sql`
+      INSERT INTO categories (name, slug, description, featured, sort_order)
+      VALUES (${name}, ${slug}, ${options?.description ?? null}, false, 99)
+      RETURNING id
+    `) as { id: string }[];
+    logger.info('Category synced', { name, slug });
+    return created[0]?.id ?? null;
+  } catch {
+    const retry = (await sql`
+      SELECT id FROM categories WHERE slug = ${slug} LIMIT 1
+    `) as { id: string }[];
+    if (retry[0]?.id) return retry[0].id;
+    logger.warn('Failed to resolve category', { name, slug });
     return null;
   }
-
-  logger.info('Category synced', { name, slug });
-  return created?.id ?? null;
 }
 
-/** Upsert many Shopify collections as categories before product import */
 export async function syncCollectionCategories(
   collections: Array<{ name: string; slug: string; description?: string | null }>
 ): Promise<number> {
@@ -138,139 +134,150 @@ export async function syncCollectionCategories(
   for (const col of collections) {
     const id = await resolveCategoryId(col.name, {
       collectionSlug: col.slug,
-      description:    col.description,
+      description: col.description,
     });
     if (id) synced++;
   }
   return synced;
 }
 
-// ─── Product save ─────────────────────────────────────────
 export async function saveProduct(product: {
-  name:         string;
-  slug:         string;
-  description:  string | null;
+  name: string;
+  slug: string;
+  description: string | null;
   source_price: number;
-  price:        number;
-  sku:          string | null;
-  tags:         string[];
-  in_stock:     boolean;
-  source_url:   string;
-  status:       'pending';
+  price: number;
+  sku: string | null;
+  tags: string[];
+  in_stock: boolean;
+  source_url: string;
+  status: 'pending';
   category_id?: string | null;
 }): Promise<string | null> {
-  const supabase = getSupabase();
+  const sql = getSql();
 
-  // Duplicate by exact source_url
-  const { data: existingByUrl } = await supabase
-    .from('products')
-    .select('id')
-    .eq('source_url', product.source_url)
-    .maybeSingle();
-
-  if (existingByUrl?.id) {
+  const existingByUrl = (await sql`
+    SELECT id FROM products WHERE source_url = ${product.source_url} LIMIT 1
+  `) as { id: string }[];
+  if (existingByUrl[0]?.id) {
     logger.debug('Product already exists (source_url)', { sourceUrl: product.source_url });
     return null;
   }
 
-  // Duplicate by Shopify handle (blocks copy-1 / copy-2 URLs for same item)
   const handle = productHandleFromUrl(product.source_url);
   if (handle) {
-    const { data: existingByHandle } = await supabase
-      .from('products')
-      .select('id')
-      .ilike('source_url', `%/products/${handle}%`)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingByHandle?.id) {
+    const existingByHandle = (await sql`
+      SELECT id FROM products
+      WHERE source_url ILIKE ${`%/products/${handle}%`}
+      LIMIT 1
+    `) as { id: string }[];
+    if (existingByHandle[0]?.id) {
       logger.debug('Product already exists (handle)', { handle, sourceUrl: product.source_url });
       return null;
     }
 
-    // Stable slug from handle — skip if slug taken by another product
-    const { data: existingSlug } = await supabase
-      .from('products')
-      .select('id')
-      .eq('slug', product.slug)
-      .maybeSingle();
-
-    if (existingSlug?.id) {
+    const existingSlug = (await sql`
+      SELECT id FROM products WHERE slug = ${product.slug} LIMIT 1
+    `) as { id: string }[];
+    if (existingSlug[0]?.id) {
       logger.debug('Product slug already exists', { slug: product.slug });
       return null;
     }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .insert(product)
-    .select('id')
-    .single();
-
-  if (error) {
+  try {
+    const data = (await sql`
+      INSERT INTO products (
+        name, slug, description, source_price, price, sku, tags, in_stock, source_url, status, category_id
+      ) VALUES (
+        ${product.name},
+        ${product.slug},
+        ${product.description},
+        ${product.source_price},
+        ${product.price},
+        ${product.sku},
+        ${product.tags}::text[],
+        ${product.in_stock},
+        ${product.source_url},
+        ${product.status},
+        ${product.category_id ?? null}
+      )
+      RETURNING id
+    `) as { id: string }[];
+    return data[0]?.id ?? null;
+  } catch (error) {
     logger.error('Failed to save product', { error, product: product.name });
     return null;
   }
-
-  return data.id;
 }
 
-// ─── Save product variants ────────────────────────────────
 export async function saveVariants(
   productId: string,
   variants: Array<{
-    name:           string;
-    value:          string;
+    name: string;
+    value: string;
     price_modifier: number;
     stock_quantity: number;
   }>
 ): Promise<void> {
   if (!variants.length) return;
-  const supabase = getSupabase();
-
-  const { error } = await supabase.from('product_variants').insert(
-    variants.map((v) => ({ ...v, product_id: productId }))
-  );
-
-  if (error) logger.error('Failed to save variants', { error, productId });
+  const sql = getSql();
+  try {
+    for (const v of variants) {
+      await sql`
+        INSERT INTO product_variants (product_id, name, value, price_modifier, stock_quantity)
+        VALUES (${productId}, ${v.name}, ${v.value}, ${v.price_modifier}, ${v.stock_quantity})
+      `;
+    }
+  } catch (error) {
+    logger.error('Failed to save variants', { error, productId });
+  }
 }
 
-// ─── Save product image record (after processing) ─────────
 export async function saveProductImage(image: {
   product_id: string;
-  url:        string;
-  alt?:       string;
+  url: string;
+  alt?: string;
   is_primary: boolean;
-  position:   number;
+  position: number;
 }): Promise<void> {
-  const supabase = getSupabase();
-  const { error } = await supabase.from('product_images').insert(image);
-  if (error) logger.error('Failed to save product image', { error });
+  const sql = getSql();
+  try {
+    await sql`
+      INSERT INTO product_images (product_id, url, alt, is_primary, position)
+      VALUES (
+        ${image.product_id},
+        ${image.url},
+        ${image.alt ?? null},
+        ${image.is_primary},
+        ${image.position}
+      )
+    `;
+  } catch (error) {
+    logger.error('Failed to save product image', { error });
+  }
 }
 
-// ─── Upload image buffer to Supabase Storage ──────────────
 export async function uploadImageToStorage(
-  buffer:   Buffer,
+  buffer: Buffer,
   filePath: string,
   mimeType: string = 'image/webp'
 ): Promise<string | null> {
-  const supabase = getSupabase();
-
-  const { error } = await supabase.storage
-    .from(config.SUPABASE_STORAGE_BUCKET)
-    .upload(filePath, buffer, {
-      contentType: mimeType,
-      upsert:      true,
-    });
-
-  if (error) {
-    logger.error('Failed to upload image to storage', { error, filePath });
+  try {
+    const key = filePath.startsWith('product-images/')
+      ? filePath
+      : `product-images/${filePath}`;
+    return await uploadToR2(key, buffer, mimeType);
+  } catch (error) {
+    logger.error('Failed to upload image to R2', { error, filePath });
     return null;
   }
-
-  const { data } = supabase.storage
-    .from(config.SUPABASE_STORAGE_BUCKET)
-    .getPublicUrl(filePath);
-
-  return data.publicUrl;
 }
+
+/** @deprecated no longer used — kept for type compatibility */
+export function getSupabase() {
+  throw new Error('Supabase data client removed; use Neon via getSql()');
+}
+
+// silence unused config warning if bucket still referenced elsewhere
+void config.R2_BUCKET;

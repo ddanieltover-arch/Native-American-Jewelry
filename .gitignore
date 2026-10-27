@@ -12,6 +12,7 @@ out/
 naj-storefront/.env.local
 naj-admin-dashboard/.env.local
 naj-scraper-service/.env
+naj-db/.env
 
 # Build / cache
 dist/

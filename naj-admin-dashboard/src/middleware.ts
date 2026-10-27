@@ -1,23 +1,19 @@
 import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { neon } from '@neondatabase/serverless';
 import { NextResponse, type NextRequest } from 'next/server';
 
 async function isAdminEmail(email: string): Promise<boolean> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return false;
-
-  const service = createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  const { data } = await service
-    .from('admin_users')
-    .select('id')
-    .eq('email', email.trim().toLowerCase())
-    .maybeSingle();
-
-  return !!data;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return false;
+  try {
+    const sql = neon(databaseUrl);
+    const rows = await sql`
+      SELECT id FROM admin_users WHERE email = ${email.trim().toLowerCase()} LIMIT 1
+    `;
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function middleware(request: NextRequest) {

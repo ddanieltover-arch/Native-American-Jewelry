@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { getActiveProductsForFeed, isDatabaseConfigured } from '@/lib/db';
 
 export const revalidate = 3600;
 
@@ -13,18 +13,6 @@ function escapeXml(value: string): string {
 
 type FeedImage = { url: string; is_primary?: boolean; position?: number };
 type FeedCategory = { name: string } | { name: string }[] | null;
-type FeedProduct = {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  price: number;
-  sku: string | null;
-  in_stock: boolean;
-  seo_title: string | null;
-  images?: FeedImage[] | null;
-  category?: FeedCategory;
-};
 
 function primaryImage(images: FeedImage[] | null | undefined): string {
   if (!images?.length) return '';
@@ -46,43 +34,30 @@ export async function GET() {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://nativeamericanjewelry.com';
   const brand = process.env.NEXT_PUBLIC_BRAND_NAME ?? 'Native American Jewelry';
 
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
+  if (!isDatabaseConfigured()) {
     return new Response('Product feed not configured', { status: 503 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  const { data, error } = await supabase
-    .from('products')
-    .select(
-      'id, name, slug, description, price, sku, in_stock, seo_title, images:product_images(url, is_primary, position), category:categories(name)'
-    )
-    .eq('status', 'active')
-    .limit(5000);
-
-  if (error) {
+  let data: Awaited<ReturnType<typeof getActiveProductsForFeed>>;
+  try {
+    data = await getActiveProductsForFeed(5000);
+  } catch (error) {
     console.error('GET /feed.xml:', error);
     return new Response('Failed to build product feed', { status: 500 });
   }
 
-  const items = ((data ?? []) as FeedProduct[])
+  const items = data
     .map((product) => {
-      const imageUrl = primaryImage(product.images);
+      const imageUrl = primaryImage(product.images as FeedImage[]);
       if (!imageUrl) return '';
 
-      const id = product.sku || product.id;
-      const title = product.seo_title || product.name;
-      const description = (product.description || product.name).slice(0, 5000);
+      const id = (product.sku as string) || product.id;
+      const title = (product.seo_title as string) || (product.name as string);
+      const description = String(product.description || product.name).slice(0, 5000);
       const link = `${base}/product/${product.slug}`;
       const price = `${Number(product.price).toFixed(2)} USD`;
       const availability = product.in_stock ? 'in stock' : 'out of stock';
-      const productType = categoryName(product.category);
+      const productType = categoryName(product.category as FeedCategory);
 
       return `
     <item>

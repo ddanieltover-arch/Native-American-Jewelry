@@ -8,8 +8,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Heart, Package, User, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWishlistStore } from '@/lib/store';
-import { createClient } from '@/lib/supabase-client';
 import { useCustomerAuth } from '@/hooks/useCustomerAuth';
+
 import { cn, formatPrice, formatDateShort, ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/utils';
 import ProductCard from '@/components/store/ProductCard';
 import type { Order, Product } from '@/types';
@@ -75,25 +75,17 @@ function AccountContent() {
 
   const loadOrders = useCallback(async () => {
     if (!user) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('orders')
-      .select('*, items:order_items(*), payment:payments(*)')
-      .eq('customer_id', user.id)
-      .order('created_at', { ascending: false });
-    setOrders((data as Order[]) ?? []);
+    const res = await fetch('/api/account/profile', { credentials: 'include', cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    setOrders((data.orders as Order[]) ?? []);
+    setAddresses((data.addresses as AddressRow[]) ?? []);
   }, [user]);
 
   const loadAddresses = useCallback(async () => {
     if (!user) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('customer_addresses')
-      .select('*')
-      .eq('customer_id', user.id)
-      .order('is_default', { ascending: false });
-    setAddresses((data as AddressRow[]) ?? []);
-  }, [user]);
+    await loadOrders();
+  }, [user, loadOrders]);
 
   useEffect(() => {
     if (!user) return;
@@ -117,34 +109,31 @@ function AccountContent() {
 
   useEffect(() => {
     if (!user || !productIds.length) return;
-    const supabase = createClient();
-    supabase.from('customers').update({ wishlist: productIds }).eq('id', user.id).then();
+    fetch('/api/account/profile', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wishlist: productIds }),
+    }).catch(() => {});
   }, [user, productIds]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     setSavingProfile(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('customers')
-      .update({
+    const res = await fetch('/api/account/profile', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         first_name: profileForm.firstName.trim() || null,
         last_name: profileForm.lastName.trim() || null,
         phone: profileForm.phone.trim() || null,
-      })
-      .eq('id', user.id);
-
-    await supabase.auth.updateUser({
-      data: {
-        first_name: profileForm.firstName.trim(),
-        last_name: profileForm.lastName.trim(),
-        phone: profileForm.phone.trim(),
-      },
+      }),
     });
 
     setSavingProfile(false);
-    if (error) {
+    if (!res.ok) {
       toast.error('Could not update profile');
       return;
     }

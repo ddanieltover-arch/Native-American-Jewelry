@@ -84,11 +84,17 @@ export default function CheckoutPage() {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('first_name, last_name, phone')
-        .eq('id', user.id)
-        .maybeSingle();
+      let customer: { first_name?: string | null; last_name?: string | null; phone?: string | null } | null =
+        null;
+      try {
+        const res = await fetch('/api/account/profile', { credentials: 'include', cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          customer = data.customer;
+        }
+      } catch {
+        /* optional prefill */
+      }
       setForm((f) => ({
         ...f,
         email: user.email ?? f.email,
